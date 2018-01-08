@@ -20,5 +20,5 @@ project ahead of us, as well as build our first steps towards voice recognition!
 #### Files Involved
 
 ```
-ears.py # Python test code to convert speech to  text
+**ears.py** # *Python test code to convert speech to text*
 ```

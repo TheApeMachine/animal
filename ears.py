@@ -1,14 +1,13 @@
 from __future__ import division
-
 import re
 import sys
-
 from google.cloud import speech
 from google.cloud.speech import enums
 from google.cloud.speech import types
 import pyaudio
 from six.moves import queue
 
+# Set the sample rate and audio chunk size.
 RATE  = 16000
 CHUNK = int(RATE / 10)
 
@@ -92,28 +91,43 @@ def process(responses):
             num_chars_printed = 0
 
 def main():
+    # Which language do you want to use to speak to your robot?
     language_code = 'en-US'
 
+    # Create a client for Google Cloud Speech API.
     client = speech.SpeechClient()
+
+    # Set the audio encoding, sample rate, and language to send to the API.
     config = types.RecognitionConfig(
         encoding          = enums.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz = RATE,
         language_code     = language_code
     )
 
+    # Pass the previous configuration into the streaming service, and by
+    # setting interim_results to True we get almost real-time transcription.
     streaming_config = types.StreamingRecognitionConfig(
         config          = config,
         interim_results = True
     )
 
+    # Start streaming from the microphone.
     with MicrophoneStream(RATE, CHUNK) as stream:
+        # Generate an audio clip in memory to send to the API, without creating
+        # a file on the hard drive.
         audio_generator = stream.generator()
-        requests        = (
+
+        # Formulate the requests we need to send to the API from the audio
+        # data we have generated.
+        requests = (
             types.StreamingRecognizeRequest(audio_content=content)
             for content in audio_generator
         )
 
+        # Collect the responses sent back to us from the Speech API.
         responses = client.streaming_recognize(streaming_config, requests)
+
+        # Send the responses to our process function.
         process(responses)
 
 if __name__ == '__main__':

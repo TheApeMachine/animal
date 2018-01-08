@@ -68,26 +68,40 @@ class MicrophoneStream(object):
             yield b''.join(data)
 
 def process(responses):
+    # Reset the number of current recognized characters.
     num_chars_printed = 0
 
+    # Loop over the list of responses
     for response in responses:
+        # Continue from beginning of the loop if nothing is found in this
+        # response.
         if not response.results:
             continue
 
+        # Take the first response suggestion from the list and store it in
+        # result.
         result = response.results[0]
 
+        # If this result is empty, continue from the beginning of the loop.
         if not result.alternatives:
             continue
 
-        transcript     = result.alternatives[0].transcript
+        # Take the first alternative from the list, and store this in transcript.
+        transcript      = result.alternatives[0].transcript
         overwrite_chars = ' ' * (num_chars_printed - len(transcript))
 
+        # If this is not the final result, write what we have so far to the
+        # console.
         if not result.is_final:
             sys.stdout.write(transcript + overwrite_chars + '\r')
             sys.stdout.flush()
+        # If this is the final result, just print the entire transcript to the
+        # console.
         else:
             print(transcript + overwrite_chars)
 
+            # Don't forget to reset the number of current recognized characters
+            # before we restart the process.
             num_chars_printed = 0
 
 def main():

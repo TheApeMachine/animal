@@ -2,12 +2,12 @@
 
 ## Let's Build A Robot!
 
-## Day 1: Intro & Ears
+### Day 1: Intro & Ears
 
 In [this video](https://www.youtube.com/watch?v=2LWldC47DGA) we go over the
 project ahead of us, as well as build our first steps towards voice recognition!
 
-## Instructions
+#### Instructions
 
 1. Install Python & All requirements
 2. Sign up for the [Google Cloud API](https://cloud.google.com/)
@@ -17,4 +17,8 @@ project ahead of us, as well as build our first steps towards voice recognition!
 6. Download the JSON for your service account
 7. Set your environment variable GOOGLE_APPLICATION_CREDENTIALS to point to the downloaded JSON file
 
-You should be ready to go now.
+#### Files Involved
+
+'''
+ears.py # Python test code to convert speech to  text
+'''

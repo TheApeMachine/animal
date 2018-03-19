@@ -6,6 +6,7 @@ from google.cloud.speech import enums
 from google.cloud.speech import types
 import pyaudio
 from six.moves import queue
+from multiprocessing import Process
 
 # Set the sample rate and audio chunk size.
 RATE  = 16000
@@ -67,82 +68,84 @@ class MicrophoneStream(object):
 
             yield b''.join(data)
 
-def process(responses):
-    # Reset the number of current recognized characters.
-    num_chars_printed = 0
+class Ears:
 
-    # Loop over the list of responses
-    for response in responses:
-        # Continue from beginning of the loop if nothing is found in this
-        # response.
-        if not response.results:
-            continue
+    def process(self, responses):
+        # Reset the number of current recognized characters.
+        num_chars_printed = 0
 
-        # Take the first response suggestion from the list and store it in
-        # result.
-        result = response.results[0]
+        # Loop over the list of responses
+        for response in responses:
+            # Continue from beginning of the loop if nothing is found in this
+            # response.
+            if not response.results:
+                continue
 
-        # If this result is empty, continue from the beginning of the loop.
-        if not result.alternatives:
-            continue
+            # Take the first response suggestion from the list and store it in
+            # result.
+            result = response.results[0]
 
-        # Take the first alternative from the list, and store this in transcript.
-        transcript      = result.alternatives[0].transcript
-        overwrite_chars = ' ' * (num_chars_printed - len(transcript))
+            # If this result is empty, continue from the beginning of the loop.
+            if not result.alternatives:
+                continue
 
-        # If this is not the final result, write what we have so far to the
-        # console.
-        if not result.is_final:
-            sys.stdout.write(transcript + overwrite_chars + '\r')
-            sys.stdout.flush()
-        # If this is the final result, just print the entire transcript to the
-        # console.
-        else:
-            print(transcript + overwrite_chars)
+            # Take the first alternative from the list, and store this in transcript.
+            transcript      = result.alternatives[0].transcript
+            overwrite_chars = ' ' * (num_chars_printed - len(transcript))
 
-            # Don't forget to reset the number of current recognized characters
-            # before we restart the process.
-            num_chars_printed = 0
+            # If this is not the final result, write what we have so far to the
+            # console.
+            if not result.is_final:
+                sys.stdout.write(transcript + overwrite_chars + '\r')
+                sys.stdout.flush()
+            # If this is the final result, just print the entire transcript to the
+            # console.
+            else:
+                print(transcript + overwrite_chars)
 
-def main():
-    # Which language do you want to use to speak to your robot?
-    language_code = 'en-US'
+                # Don't forget to reset the number of current recognized characters
+                # before we restart the process.
+                num_chars_printed = 0
 
-    # Create a client for Google Cloud Speech API.
-    client = speech.SpeechClient()
+    def hear(self):
+        # Which language do you want to use to speak to your robot?
+        language_code = 'en-US'
 
-    # Set the audio encoding, sample rate, and language to send to the API.
-    config = types.RecognitionConfig(
-        encoding          = enums.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz = RATE,
-        language_code     = language_code
-    )
+        # Create a client for Google Cloud Speech API.
+        client = speech.SpeechClient()
 
-    # Pass the previous configuration into the streaming service, and by
-    # setting interim_results to True we get almost real-time transcription.
-    streaming_config = types.StreamingRecognitionConfig(
-        config          = config,
-        interim_results = True
-    )
-
-    # Start streaming from the microphone.
-    with MicrophoneStream(RATE, CHUNK) as stream:
-        # Generate an audio clip in memory to send to the API, without creating
-        # a file on the hard drive.
-        audio_generator = stream.generator()
-
-        # Formulate the requests we need to send to the API from the audio
-        # data we have generated.
-        requests = (
-            types.StreamingRecognizeRequest(audio_content=content)
-            for content in audio_generator
+        # Set the audio encoding, sample rate, and language to send to the API.
+        config = types.RecognitionConfig(
+            encoding          = enums.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz = RATE,
+            language_code     = language_code
         )
 
-        # Collect the responses sent back to us from the Speech API.
-        responses = client.streaming_recognize(streaming_config, requests)
+        # Pass the previous configuration into the streaming service, and by
+        # setting interim_results to True we get almost real-time transcription.
+        streaming_config = types.StreamingRecognitionConfig(
+            config          = config,
+            interim_results = True
+        )
 
-        # Send the responses to our process function.
-        process(responses)
+        # Start streaming from the microphone.
+        with MicrophoneStream(RATE, CHUNK) as stream:
+            # Generate an audio clip in memory to send to the API, without creating
+            # a file on the hard drive.
+            audio_generator = stream.generator()
 
-if __name__ == '__main__':
-    main()
+            # Formulate the requests we need to send to the API from the audio
+            # data we have generated.
+            requests = (
+                types.StreamingRecognizeRequest(audio_content=content)
+                for content in audio_generator
+            )
+
+            # Collect the responses sent back to us from the Speech API.
+            responses = client.streaming_recognize(streaming_config, requests)
+
+            # Send the responses to our process function.
+            process(responses)
+
+    def run(self):
+        me = Process(target=self.run())

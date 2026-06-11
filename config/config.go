@@ -20,9 +20,16 @@ type AISection struct {
 	Model     string                  `yaml:"model"`
 	Endpoint  string                  `yaml:"endpoint"`
 	APIKey    string                  `yaml:"apiKey"`
+	Lease     LeaseSection            `yaml:"lease"`
+	Swarm     SwarmSection            `yaml:"swarm"`
 	Prompt    PromptSection           `yaml:"prompt,omitempty"`
 	Personas  map[string]PersonaYAML  `yaml:"personas"`
 	Workflows map[string]WorkflowYAML `yaml:"workflows"`
+}
+
+// LeaseSection configures exclusive resource leasing defaults.
+type LeaseSection struct {
+	IdleTTLSeconds int `yaml:"idle_ttl_seconds"`
 }
 
 type PromptSection struct {

@@ -13,10 +13,10 @@ Workflow coordinates multi-agent collaboration using qpool jobs and optional bro
 type Workflow struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	pool   *qpool.Q
+	pool   *qpool.Q[any]
 }
 
-func NewWorkflow(ctx context.Context, pool *qpool.Q) (*Workflow, error) {
+func NewWorkflow(ctx context.Context, pool *qpool.Q[any]) (*Workflow, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	wf := &Workflow{

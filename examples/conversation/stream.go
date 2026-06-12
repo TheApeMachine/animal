@@ -2,10 +2,9 @@ package conversation
 
 import (
 	"context"
-	"time"
 
 	"github.com/theapemachine/animal/ai/provider"
-	"github.com/theapemachine/qpool"
+	"github.com/theapemachine/errnie"
 )
 
 func collectStreamReply(
@@ -14,15 +13,15 @@ func collectStreamReply(
 	system string,
 	agentCtx *provider.Context,
 ) (string, error) {
-	broadcast, err := qpool.NewBroadcastGroup(ctx, "conversation-stream", 64*time.Second)
+	err := openai.Stream(system, agentCtx, provider.NewParams())
+
 	if err != nil {
-		return "", err
+		return "", errnie.Err(
+			errnie.IO,
+			"collect stream reply failed",
+			err,
+		)
 	}
 
-	err = openai.Stream(system, agentCtx, broadcast, provider.NewParams())
-	if err != nil {
-		return "", err
-	}
-
-	return "", nil
+	return "", errnie.Error(err)
 }

@@ -2,22 +2,39 @@ package lease
 
 import (
 	"fmt"
-	"sync"
+	"maps"
 	"time"
 
 	"github.com/theapemachine/animal/actor"
+	"github.com/theapemachine/animal/internal"
 )
+
+type coordinatorSnapshot struct {
+	leases map[string]leaseRecord
+}
+
+func newCoordinatorSnapshot() coordinatorSnapshot {
+	return coordinatorSnapshot{
+		leases: make(map[string]leaseRecord),
+	}
+}
+
+func cloneCoordinatorSnapshot(snapshot coordinatorSnapshot) coordinatorSnapshot {
+	leases := make(map[string]leaseRecord, len(snapshot.leases))
+	maps.Copy(leases, snapshot.leases)
+
+	return coordinatorSnapshot{leases: leases}
+}
 
 /*
 Coordinator tracks exclusive prefix leases over a KeySpace.
 Leases expire when idle longer than Options.IdleTTL.
 */
 type Coordinator struct {
-	mu       sync.RWMutex
+	state    *internal.Snapshot[coordinatorSnapshot]
 	keySpace KeySpace
 	idleTTL  time.Duration
 	now      func() time.Time
-	leases   map[string]leaseRecord
 }
 
 /*
@@ -33,10 +50,10 @@ func NewCoordinator(options Options) (*Coordinator, error) {
 	}
 
 	return &Coordinator{
+		state:    internal.NewSnapshot(newCoordinatorSnapshot()),
 		keySpace: options.KeySpace,
 		idleTTL:  options.IdleTTL,
 		now:      time.Now,
-		leases:   make(map[string]leaseRecord),
 	}, nil
 }
 
@@ -64,22 +81,27 @@ func (coordinator *Coordinator) AcquireID(prefix, actorID string) error {
 		return err
 	}
 
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	var acquireErr error
 
-	coordinator.purgeExpiredLocked(coordinator.now())
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	record, ok := coordinator.leases[leaseKey]
-	if ok && record.actorID != actorID {
-		return fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
-	}
+		record, ok := updated.leases[leaseKey]
+		if ok && record.actorID != actorID {
+			acquireErr = fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
+			return snapshot
+		}
 
-	coordinator.leases[leaseKey] = leaseRecord{
-		actorID:  actorID,
-		lastUsed: coordinator.now(),
-	}
+		updated.leases[leaseKey] = leaseRecord{
+			actorID:  actorID,
+			lastUsed: coordinator.now(),
+		}
 
-	return nil
+		return updated
+	})
+
+	return acquireErr
 }
 
 /*
@@ -106,22 +128,29 @@ func (coordinator *Coordinator) ReleaseID(prefix, actorID string) error {
 		return err
 	}
 
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	var releaseErr error
 
-	coordinator.purgeExpiredLocked(coordinator.now())
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	record, ok := coordinator.leases[leaseKey]
-	if !ok {
-		return fmt.Errorf("lease: key %q is not leased", prefix)
-	}
+		record, ok := updated.leases[leaseKey]
+		if !ok {
+			releaseErr = fmt.Errorf("lease: key %q is not leased", prefix)
+			return snapshot
+		}
 
-	if record.actorID != actorID {
-		return fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
-	}
+		if record.actorID != actorID {
+			releaseErr = fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
+			return snapshot
+		}
 
-	delete(coordinator.leases, leaseKey)
-	return nil
+		delete(updated.leases, leaseKey)
+
+		return updated
+	})
+
+	return releaseErr
 }
 
 /*
@@ -137,23 +166,30 @@ func (coordinator *Coordinator) TouchID(prefix, actorID string) error {
 		return err
 	}
 
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	var touchErr error
 
-	coordinator.purgeExpiredLocked(coordinator.now())
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	record, ok := coordinator.leases[leaseKey]
-	if !ok {
-		return fmt.Errorf("lease: key %q is not leased", prefix)
-	}
+		record, ok := updated.leases[leaseKey]
+		if !ok {
+			touchErr = fmt.Errorf("lease: key %q is not leased", prefix)
+			return snapshot
+		}
 
-	if record.actorID != actorID {
-		return fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
-	}
+		if record.actorID != actorID {
+			touchErr = fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
+			return snapshot
+		}
 
-	record.lastUsed = coordinator.now()
-	coordinator.leases[leaseKey] = record
-	return nil
+		record.lastUsed = coordinator.now()
+		updated.leases[leaseKey] = record
+
+		return updated
+	})
+
+	return touchErr
 }
 
 /*
@@ -168,23 +204,27 @@ func (coordinator *Coordinator) ObserveRead(key string, principal Principal) err
 		return err
 	}
 
-	coordinator.mu.Lock()
-	coordinator.purgeExpiredLocked(coordinator.now())
-	coordinator.mu.Unlock()
+	var observeErr error
 
-	coordinator.mu.RLock()
-	defer coordinator.mu.RUnlock()
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	leaseKey, holder := coordinator.leaseHolder(normalized)
-	if holder == "" || holder == principal.ActorID {
-		return nil
-	}
+		leaseKey, holder := coordinator.leaseHolderFromSnapshot(updated, normalized)
+		if holder == "" || holder == principal.ActorID {
+			return updated
+		}
 
-	return &ChangingError{
-		Key:      key,
-		LeaseKey: leaseKey,
-		ActorID:  holder,
-	}
+		observeErr = &ChangingError{
+			Key:      key,
+			LeaseKey: leaseKey,
+			ActorID:  holder,
+		}
+
+		return updated
+	})
+
+	return observeErr
 }
 
 /*
@@ -209,26 +249,33 @@ func (coordinator *Coordinator) CanWrite(key string, principal Principal) error 
 		return nil
 	}
 
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	var writeErr error
 
-	coordinator.purgeExpiredLocked(coordinator.now())
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	for leaseKey, record := range coordinator.leases {
-		if !coordinator.keySpace.Covers(leaseKey, normalized) {
-			continue
+		for leaseKey, record := range updated.leases {
+			if !coordinator.keySpace.Covers(leaseKey, normalized) {
+				continue
+			}
+
+			if record.actorID != principal.ActorID {
+				continue
+			}
+
+			record.lastUsed = coordinator.now()
+			updated.leases[leaseKey] = record
+
+			return updated
 		}
 
-		if record.actorID != principal.ActorID {
-			continue
-		}
+		writeErr = fmt.Errorf("lease: actor %q lacks an active lease for %q", principal.ActorID, key)
 
-		record.lastUsed = coordinator.now()
-		coordinator.leases[leaseKey] = record
-		return nil
-	}
+		return snapshot
+	})
 
-	return fmt.Errorf("lease: actor %q lacks an active lease for %q", principal.ActorID, key)
+	return writeErr
 }
 
 func (coordinator *Coordinator) touchCoveringLease(normalizedKey, actorID string) {
@@ -236,41 +283,46 @@ func (coordinator *Coordinator) touchCoveringLease(normalizedKey, actorID string
 		return
 	}
 
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
+	coordinator.state.Update(func(snapshot coordinatorSnapshot) coordinatorSnapshot {
+		updated := cloneCoordinatorSnapshot(snapshot)
+		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-	coordinator.purgeExpiredLocked(coordinator.now())
+		for leaseKey, record := range updated.leases {
+			if record.actorID != actorID {
+				continue
+			}
 
-	for leaseKey, record := range coordinator.leases {
-		if record.actorID != actorID {
-			continue
+			if !coordinator.keySpace.Covers(leaseKey, normalizedKey) {
+				continue
+			}
+
+			record.lastUsed = coordinator.now()
+			updated.leases[leaseKey] = record
+
+			return updated
 		}
 
-		if !coordinator.keySpace.Covers(leaseKey, normalizedKey) {
-			continue
-		}
-
-		record.lastUsed = coordinator.now()
-		coordinator.leases[leaseKey] = record
-		return
-	}
+		return snapshot
+	})
 }
 
-func (coordinator *Coordinator) purgeExpiredLocked(now time.Time) {
-	for leaseKey, record := range coordinator.leases {
+func (coordinator *Coordinator) purgeExpiredSnapshot(snapshot *coordinatorSnapshot, now time.Time) {
+	for leaseKey, record := range snapshot.leases {
 		if now.Sub(record.lastUsed) <= coordinator.idleTTL {
 			continue
 		}
 
-		delete(coordinator.leases, leaseKey)
+		delete(snapshot.leases, leaseKey)
 	}
 }
 
-func (coordinator *Coordinator) leaseHolder(normalizedKey string) (string, string) {
+func (coordinator *Coordinator) leaseHolderFromSnapshot(
+	snapshot coordinatorSnapshot, normalizedKey string,
+) (string, string) {
 	var bestLeaseKey string
 	var holder string
 
-	for leaseKey, record := range coordinator.leases {
+	for leaseKey, record := range snapshot.leases {
 		if !coordinator.keySpace.Covers(leaseKey, normalizedKey) {
 			continue
 		}

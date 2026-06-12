@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/theapemachine/animal/ai/mcpclient"
 	"github.com/theapemachine/animal/ai/tool/editor/agent"
 	"github.com/theapemachine/animal/ai/tool/editor/fs"
 	"github.com/theapemachine/animal/ai/tool/editor/workspace"
@@ -92,6 +93,16 @@ func (server *Server) Run() error {
 
 	server.app.All("/mcp/editor", adaptor.HTTPHandler(handler))
 	return server.app.Listen(":3000")
+}
+
+/*
+ClientSession connects an in-memory MCP client to editor tools for agent runners.
+*/
+func (server *Server) ClientSession(
+	ctx context.Context,
+	access agent.Access,
+) (*mcp.ClientSession, error) {
+	return mcpclient.ConnectInMemory(ctx, server.mcpServer(access))
 }
 
 func (server *Server) mcpServer(access agent.Access) *mcp.Server {

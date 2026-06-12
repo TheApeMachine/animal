@@ -6,6 +6,8 @@ go 1.26.1
 
 // replace github.com/theapemachine/qpool => ../qpool
 
+// replace github.com/theapemachine/nomagique => ../nomagique
+
 require (
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9

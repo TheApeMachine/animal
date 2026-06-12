@@ -25,6 +25,17 @@ All examples need the qpool linkname flag on Go 1.26+. Use the Makefile targets 
 |---------|---------|---------------|
 | [conversation_salon](./conversation_salon/) | `make example-conversation-salon` | Sentience panel personas, proper chat roles, persistent moderator anchor, distinctive-theme clustering. Ctrl+C to stop. |
 
+## Coding horizon
+
+| Example | Command | What it shows |
+|---------|---------|---------------|
+| [coding_horizon](./coding_horizon/) | `make example-coding-horizon-dry` | Long-horizon AI-native coding loop: observe repo, build goal+hygiene backlog, recon/plan/mutate/prove cycles with swarm announces. Dry-run skips LLM edits. |
+| [coding_horizon](./coding_horizon/) | `go run -ldflags=-checklinkname=0 ./examples/coding_horizon -workspace /path/to/repo -goal "your one-line goal"` | Full loop with LLM intake, atomic replace slices, package-scoped `go test` proof, and final audit. Requires `ai.endpoint`. |
+
+Set `-goal "..."` or pass `GOAL` via: `go run $(LDFLAGS) ./examples/coding_horizon -goal "..." -workspace /path/to/repo`.
+
+Hygiene-only mode omits `-goal`; the loop still refactors and optimizes based on static repo analysis (oversized files, missing tests, mutex/channel signals).
+
 ## Shared helpers
 
 [examples/support](./support/) resolves `cmd/cfg/config.yml`, builds a minimal qpool, and exposes default swarm/lease options.

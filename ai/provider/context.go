@@ -2,6 +2,10 @@ package provider
 
 import "context"
 
+/*
+Context accumulates the rolling message history for one agent or completion request.
+It owns a cancellable scope so in-flight provider work stops when the parent orchestration exits.
+*/
 type Context struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -9,6 +13,10 @@ type Context struct {
 	Messages []Message
 }
 
+/*
+contextOptions configures optional fields when constructing a provider Context.
+Functional options keep NewContext stable as new conversation-scoped settings are added.
+*/
 type contextOptions func(*Context)
 
 func NewContext(ctx context.Context, opts ...contextOptions) *Context {

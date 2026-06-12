@@ -117,13 +117,7 @@ func main() {
 		}
 	}()
 
-	err = llm.Stream(developer.System, &developer.Context, broadcast, provider.NewParams())
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "LLM call failed (is ai.endpoint reachable?): %v\n", err)
-		fmt.Println("gossip phase succeeded; start a local OpenAI-compatible server and re-run for phase 2")
-		return
-	}
+	err = llm.Stream(developer.System, &developer.Context, provider.NewParams())
 }
 
 func waitForAnnounce(developer *ai.Agent, topic string, timeout time.Duration) (swarm.AnnounceRecord, error) {

@@ -4,25 +4,28 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/theapemachine/animal/ai/tool/browser/doc"
 	browserrod "github.com/theapemachine/animal/ai/tool/browser/rod"
+	"github.com/theapemachine/qpool"
 )
 
 /*
 Server exposes a stealth headless browser over MCP.
 */
 type Server struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	app       *fiber.App
-	config    Config
-	session   *browserrod.Session
-	sessionMu sync.Mutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	app        *fiber.App
+	config     Config
+	session    *browserrod.Session
+	worker     *qpool.Q[any]
+	closed     atomic.Bool
+	commandSeq atomic.Uint64
 }
 
 /*
@@ -43,6 +46,7 @@ func NewServer(ctx context.Context, config Config) (*Server, error) {
 		app:     fiber.New(),
 		config:  config,
 		session: session,
+		worker:  qpool.NewQ[any](ctx, 1, 1, nil),
 	}
 
 	return server, nil
@@ -119,19 +123,34 @@ func withSession[T any](
 ) (*mcp.CallToolResult, T, error) {
 	var zero T
 
-	server.sessionMu.Lock()
-	defer server.sessionMu.Unlock()
-
-	if server.session == nil {
+	if server.closed.Load() {
 		return nil, zero, fmt.Errorf("browser: session is closed")
 	}
 
-	result, err := action(server.session)
+	jobID := fmt.Sprintf("browser-%d", server.commandSeq.Add(1))
+	wait := server.worker.Schedule(jobID, func(_ context.Context) (any, error) {
+		if server.session == nil {
+			return nil, fmt.Errorf("browser: session is closed")
+		}
+
+		return action(server.session)
+	})
+
+	result, err := wait.Get(ctx)
 	if err != nil {
 		return nil, zero, err
 	}
 
-	return nil, result, nil
+	if result.Error != nil {
+		return nil, zero, result.Error
+	}
+
+	typed, ok := result.Value.(T)
+	if !ok {
+		return nil, zero, fmt.Errorf("browser: session action returned unexpected type %T", result.Value)
+	}
+
+	return nil, typed, nil
 }
 
 /*
@@ -150,14 +169,25 @@ func (server *Server) Run() error {
 Close stops the browser and server context.
 */
 func (server *Server) Close() error {
-	server.sessionMu.Lock()
-	defer server.sessionMu.Unlock()
-
-	if server.session != nil {
-		_ = server.session.Close()
-		server.session = nil
+	if server.closed.Swap(true) {
+		return nil
 	}
 
+	jobID := fmt.Sprintf("browser-close-%d", server.commandSeq.Add(1))
+	wait := server.worker.Schedule(jobID, func(_ context.Context) (any, error) {
+		if server.session == nil {
+			return nil, nil
+		}
+
+		closeErr := server.session.Close()
+		server.session = nil
+
+		return nil, closeErr
+	})
+
+	_, err := wait.Get(server.ctx)
 	server.cancel()
-	return nil
+	server.worker.Close()
+
+	return err
 }

@@ -14,6 +14,10 @@ import (
 	"github.com/theapemachine/animal/ai/tool/browser/doc"
 )
 
+/*
+SessionConfig tunes headless browser timeouts, content limits, and stealth presentation.
+Values are applied at launch so every rod Session shares consistent guardrails across MCP tool calls.
+*/
 type SessionConfig struct {
 	Headless      bool
 	PageTimeout   time.Duration

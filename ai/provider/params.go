@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+/*
+Params bundles model, message, and structured-output settings for one Responses API call.
+The fluent With* methods let callers reuse defaults while overriding only the fields a workflow step needs.
+*/
 type Params struct {
 	Context          *Context
 	Model            string

@@ -1,4 +1,4 @@
-.PHONY: build run clean test example-swarm-parallel-claims example-swarm-roadmap-gossip example-swarm-agent-cycle example-lease-workspace example-editor-mcp example-conversation-salon examples
+.PHONY: build run clean test example-swarm-parallel-claims example-swarm-roadmap-gossip example-swarm-agent-cycle example-lease-workspace example-editor-mcp example-conversation-salon example-coding-horizon example-coding-horizon-dry examples
 
 # The pool package uses go:linkname to access runtime scheduling
 # primitives (dropg, readgstatus) for zero-overhead goroutine parking.
@@ -42,3 +42,9 @@ example-browser-mcp:
 
 example-conversation-salon:
 	go run $(LDFLAGS) ./examples/conversation_salon
+
+example-coding-horizon:
+	go run $(LDFLAGS) ./examples/coding_horizon
+
+example-coding-horizon-dry:
+	go run $(LDFLAGS) ./examples/coding_horizon -dry-run -max-cycles 2 -workspace .

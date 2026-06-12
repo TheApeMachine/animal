@@ -12,6 +12,10 @@ import (
 	"github.com/theapemachine/qpool"
 )
 
+/*
+Agent is one configured LLM participant with persona, tools, memory, and optional swarm attachment.
+It polls incoming gossip or coop traffic and appends provider messages into a shared conversation context.
+*/
 type Agent struct {
 	ctx           context.Context
 	cancel        context.CancelFunc

@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/theapemachine/animal/internal"
 	"github.com/theapemachine/errnie"
 	"github.com/theapemachine/qpool"
 )
@@ -22,6 +23,7 @@ type OpenAI struct {
 	cancel   context.CancelFunc
 	err      error
 	pool     *qpool.Q[any]
+	bus      *internal.Bus
 	endpoint string
 	apiKey   string
 	model    string
@@ -39,9 +41,16 @@ func NewOpenAI(
 	ctx, cancel := context.WithCancel(ctx)
 
 	openai := &OpenAI{
-		ctx:      ctx,
-		cancel:   cancel,
-		pool:     pool,
+		ctx:    ctx,
+		cancel: cancel,
+		pool:   pool,
+		bus: internal.NewBus(
+			ctx,
+			pool,
+			[]internal.Channel{internal.ChannelMessages},
+			[]internal.Subscription{
+				internal.Subscribe(internal.ChannelMessages, "openai"),
+			}),
 		endpoint: strings.TrimRight(endpoint, "/"),
 		apiKey:   apiKey,
 		model:    model,
@@ -56,6 +65,7 @@ func NewOpenAI(
 		"ctx":      openai.ctx,
 		"cancel":   openai.cancel,
 		"pool":     openai.pool,
+		"bus":      openai.bus,
 		"endpoint": openai.endpoint,
 		"apiKey":   openai.apiKey,
 		"model":    openai.model,
@@ -67,23 +77,12 @@ func NewOpenAI(
 Stream sends response text deltas to broadcast until the model finishes.
 */
 func (openai *OpenAI) Stream(
-	system string,
-	agentCtx *Context,
-	broadcast *qpool.BroadcastGroup,
-	params *Params,
+	system string, agentCtx *Context, params *Params,
 ) error {
 	if agentCtx == nil {
 		return errnie.Err(
 			errnie.Validation,
 			"provider stream requires agent context",
-			nil,
-		)
-	}
-
-	if broadcast == nil {
-		return errnie.Err(
-			errnie.Validation,
-			"provider stream requires broadcast group",
 			nil,
 		)
 	}
@@ -124,6 +123,14 @@ func (openai *OpenAI) Stream(
 	stream := openai.client.Responses.NewStreaming(openai.ctx, request)
 
 	for stream.Next() {
+		if stream.Err() != nil {
+			return errnie.Err(
+				errnie.IO,
+				"provider stream next failed",
+				stream.Err(),
+			)
+		}
+
 		event := stream.Current()
 		deltaEvent := event.AsResponseOutputTextDelta()
 
@@ -131,16 +138,27 @@ func (openai *OpenAI) Stream(
 			continue
 		}
 
-		qv, qvErr := qpool.NewQValue[any]("", "", deltaEvent.Delta, time.Minute)
-		if qvErr != nil {
+		qv, err := qpool.NewQValue[any]("", "", deltaEvent.Delta, time.Minute)
+
+		if err != nil {
 			return errnie.Err(
-				errnie.Validation,
+				errnie.IO,
 				"provider stream qvalue failed",
-				qvErr,
+				err,
 			)
 		}
 
-		broadcast.Send(qv)
+		if err := openai.bus.Send(internal.ChannelMessages, "text", qv.Value); err != nil {
+			return errnie.Err(
+				errnie.IO,
+				"provider stream bus send failed",
+				errnie.Err(
+					errnie.Validation,
+					"provider stream bus send failed",
+					err,
+				),
+			)
+		}
 	}
 
 	return errnie.Error(stream.Err())

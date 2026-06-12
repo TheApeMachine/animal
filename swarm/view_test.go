@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,52 @@ func TestViewMerge(t *testing.T) {
 			})
 		})
 	})
+}
+
+/*
+TestViewMergeConcurrent verifies concurrent merges converge without data races.
+*/
+func TestViewMergeConcurrent(t *testing.T) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		t.Fatalf("new view: %v", err)
+	}
+
+	claimA := NewRumorAt(KindClaim, "actor-a", "Ada", "developer", time.Now())
+	claimA.Prefix = "lanes/a/"
+	claimB := NewRumorAt(KindClaim, "actor-b", "Ben", "developer", time.Now())
+	claimB.Prefix = "lanes/b/"
+
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(2)
+
+	go func() {
+		defer waitGroup.Done()
+
+		if mergeErr := view.Merge(claimA); mergeErr != nil {
+			t.Errorf("merge claim a: %v", mergeErr)
+		}
+	}()
+
+	go func() {
+		defer waitGroup.Done()
+
+		if mergeErr := view.Merge(claimB); mergeErr != nil {
+			t.Errorf("merge claim b: %v", mergeErr)
+		}
+	}()
+
+	waitGroup.Wait()
+
+	holderA, okA := view.ClaimHolder("lanes/a/")
+	if !okA || holderA != "actor-a" {
+		t.Fatalf("claim holder a = %q, ok = %v", holderA, okA)
+	}
+
+	holderB, okB := view.ClaimHolder("lanes/b/")
+	if !okB || holderB != "actor-b" {
+		t.Fatalf("claim holder b = %q, ok = %v", holderB, okB)
+	}
 }
 
 /*

@@ -21,10 +21,18 @@ type Turn struct {
 	At        int64
 }
 
+/*
+turnPayload is the JSON gossip envelope for a spoken salon line.
+It stays private so PublishTurn and ParseTurn own the on-wire schema.
+*/
 type turnPayload struct {
 	Content string `json:"content"`
 }
 
+/*
+stancePayload is the JSON gossip envelope for extracted opinion themes.
+Agents publish themes separately from spoken content so clustering can run without parsing free text.
+*/
 type stancePayload struct {
 	Themes []string `json:"themes"`
 }

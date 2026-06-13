@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 	"github.com/theapemachine/animal/internal"
 	"github.com/theapemachine/errnie"
 	"github.com/theapemachine/qpool"
@@ -71,6 +73,123 @@ func NewOpenAI(
 		"model":    openai.model,
 		"client":   openai.client,
 	})
+}
+
+/*
+CompleteStructured requests schema-bound JSON through chat response_format json_schema.
+Local OpenAI-compatible servers typically implement this path; the Responses API text.format
+path is reserved for Stream and other provider flows.
+*/
+func (openai *OpenAI) CompleteStructured(
+	ctx context.Context,
+	system string,
+	user string,
+	structured StructuredOutput,
+) ([]byte, error) {
+	if err := structured.Validate(); err != nil {
+		return nil, err
+	}
+
+	messages := make([]openaiapi.ChatCompletionMessageParamUnion, 0, 2)
+
+	if strings.TrimSpace(system) != "" {
+		messages = append(messages, openaiapi.ChatCompletionMessageParamUnion{
+			OfSystem: &openaiapi.ChatCompletionSystemMessageParam{
+				Content: openaiapi.ChatCompletionSystemMessageParamContentUnion{
+					OfString: openaiapi.String(system),
+				},
+			},
+		})
+	}
+
+	messages = append(messages, openaiapi.ChatCompletionMessageParamUnion{
+		OfUser: &openaiapi.ChatCompletionUserMessageParam{
+			Content: openaiapi.ChatCompletionUserMessageParamContentUnion{
+				OfString: openaiapi.String(user),
+			},
+		},
+	})
+
+	completion, err := openai.client.Chat.Completions.New(ctx, openaiapi.ChatCompletionNewParams{
+		Model:    openai.model,
+		Messages: messages,
+		ResponseFormat: openaiapi.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: jsonSchemaParam(structured),
+			},
+		},
+	})
+
+	if err != nil {
+		return nil, errnie.Err(
+			errnie.IO,
+			"provider structured completion failed",
+			err,
+		)
+	}
+
+	if len(completion.Choices) == 0 {
+		return nil, errnie.Err(
+			errnie.IO,
+			"provider structured completion returned no choices",
+			nil,
+		)
+	}
+
+	payload := strings.TrimSpace(completion.Choices[0].Message.Content)
+
+	if payload == "" {
+		return nil, errnie.Err(
+			errnie.IO,
+			"provider structured completion returned empty content",
+			nil,
+		)
+	}
+
+	if err := validateStructuredJSON(payload); err != nil {
+		return nil, err
+	}
+
+	return []byte(payload), nil
+}
+
+func jsonSchemaParam(structured StructuredOutput) shared.ResponseFormatJSONSchemaJSONSchemaParam {
+	schema := shared.ResponseFormatJSONSchemaJSONSchemaParam{
+		Name:   structured.Name,
+		Schema: structured.Schema,
+	}
+
+	if structured.Strict {
+		schema.Strict = openaiapi.Bool(true)
+	}
+
+	if strings.TrimSpace(structured.Description) != "" {
+		schema.Description = openaiapi.String(structured.Description)
+	}
+
+	return schema
+}
+
+func validateStructuredJSON(payload string) error {
+	trimmed := strings.TrimSpace(payload)
+
+	if json.Valid([]byte(trimmed)) {
+		return nil
+	}
+
+	preview := trimmed
+	if len(preview) > 120 {
+		preview = preview[:120]
+	}
+
+	return errnie.Err(
+		errnie.IO,
+		fmt.Sprintf(
+			"provider endpoint returned non-JSON (%q)",
+			preview,
+		),
+		nil,
+	)
 }
 
 /*
@@ -280,12 +399,14 @@ func (openai *OpenAI) textConfig(structured StructuredOutput) responses.Response
 		structured.Schema,
 	)
 
-	if structured.Strict && format.OfJSONSchema != nil {
-		format.OfJSONSchema.Strict = openaiapi.Bool(true)
+	schema := jsonSchemaParam(structured)
+
+	if schema.Strict.Valid() && format.OfJSONSchema != nil {
+		format.OfJSONSchema.Strict = schema.Strict
 	}
 
-	if strings.TrimSpace(structured.Description) != "" && format.OfJSONSchema != nil {
-		format.OfJSONSchema.Description = openaiapi.String(structured.Description)
+	if schema.Description.Valid() && format.OfJSONSchema != nil {
+		format.OfJSONSchema.Description = schema.Description
 	}
 
 	return responses.ResponseTextConfigParam{

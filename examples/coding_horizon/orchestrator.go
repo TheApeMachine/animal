@@ -42,7 +42,7 @@ type Orchestrator struct {
 	editorServer   *editor.Server
 	scoutSession   agentRunner
 	surgeonSession agentRunner
-	structured     *Structured
+	openai         *provider.OpenAI
 	cycle          int
 }
 
@@ -95,6 +95,11 @@ func newOrchestrator(ctx context.Context, pool *qpool.Q[any], config Config) (*O
 
 	endpoint, apiKey, model := support.OpenAIConfig()
 
+	openaiProvider, providerErr := provider.NewOpenAI(ctx, pool, endpoint, apiKey, model)
+	if providerErr != nil {
+		return nil, providerErr
+	}
+
 	orchestrator := &Orchestrator{
 		ctx:          ctx,
 		pool:         pool,
@@ -108,7 +113,7 @@ func newOrchestrator(ctx context.Context, pool *qpool.Q[any], config Config) (*O
 		surgeonSession: agentRunner{
 			runner: agent.NewRunner(endpoint, apiKey, model, surgeonSession, 8),
 		},
-		structured: newStructured(endpoint, apiKey, model),
+		openai: openaiProvider,
 	}
 
 	return orchestrator, nil
@@ -188,7 +193,8 @@ func (orchestrator *Orchestrator) intake() error {
 
 	var intake intakeResult
 
-	decodeErr := orchestrator.structured.Decode(
+	decodeErr := decodeStructured(
+		orchestrator.openai,
 		orchestrator.ctx,
 		intakeSystemPrompt,
 		intakeUserPrompt(orchestrator.config.Goal, orchestrator.digest),
@@ -196,7 +202,7 @@ func (orchestrator *Orchestrator) intake() error {
 			Name:        "coding_intake",
 			Description: "Goal decomposition for AI-native coding horizon",
 			Schema:      intakeSchema,
-			Strict:      true,
+			Strict:      false,
 		},
 		&intake,
 	)
@@ -243,7 +249,8 @@ func (orchestrator *Orchestrator) runCycle(task *Task) error {
 
 	var plan planSlice
 
-	planErr := orchestrator.structured.Decode(
+	planErr := decodeStructured(
+		orchestrator.openai,
 		orchestrator.ctx,
 		plannerSystemPrompt,
 		plannerUserPrompt(*task, orchestrator.digest, recon),
@@ -251,7 +258,7 @@ func (orchestrator *Orchestrator) runCycle(task *Task) error {
 			Name:        "coding_plan",
 			Description: "Atomic replace slice for one task",
 			Schema:      planSchema,
-			Strict:      true,
+			Strict:      false,
 		},
 		&plan,
 	)
@@ -336,7 +343,8 @@ func (orchestrator *Orchestrator) finalAudit() error {
 
 	var verdict auditVerdict
 
-	decodeErr := orchestrator.structured.Decode(
+	decodeErr := decodeStructured(
+		orchestrator.openai,
 		orchestrator.ctx,
 		auditorSystemPrompt,
 		auditorUserPrompt(orchestrator.config.Goal, orchestrator.backlog, verifyOutput),
@@ -344,7 +352,7 @@ func (orchestrator *Orchestrator) finalAudit() error {
 			Name:        "coding_audit",
 			Description: "Final audit for goal satisfaction",
 			Schema:      auditSchema,
-			Strict:      true,
+			Strict:      false,
 		},
 		&verdict,
 	)

@@ -3,80 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 
-	openaiapi "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openai/openai-go/v3/responses"
 	"github.com/theapemachine/animal/ai/provider"
 )
-
-/*
-Structured asks the model for JSON matching schema without tool access.
-*/
-type Structured struct {
-	client openaiapi.Client
-	model  string
-}
-
-func newStructured(endpoint, apiKey, model string) *Structured {
-	return &Structured{
-		client: openaiapi.NewClient(
-			option.WithBaseURL(strings.TrimRight(endpoint, "/")),
-			option.WithAPIKey(apiKey),
-		),
-		model: model,
-	}
-}
-
-func (structured *Structured) Decode(
-	ctx context.Context,
-	system string,
-	user string,
-	output provider.StructuredOutput,
-	target any,
-) error {
-	if err := output.Validate(); err != nil {
-		return err
-	}
-
-	format := responses.ResponseFormatTextConfigParamOfJSONSchema(output.Name, output.Schema)
-	if output.Strict && format.OfJSONSchema != nil {
-		format.OfJSONSchema.Strict = openaiapi.Bool(true)
-	}
-
-	request := responses.ResponseNewParams{
-		Model: structured.model,
-		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: responses.ResponseInputParam{
-				responses.ResponseInputItemParamOfMessage(user, responses.EasyInputMessageRoleUser),
-			},
-		},
-		Text: responses.ResponseTextConfigParam{Format: format},
-	}
-
-	if strings.TrimSpace(system) != "" {
-		request.Instructions = param.NewOpt(system)
-	}
-
-	response, err := structured.client.Responses.New(ctx, request)
-	if err != nil {
-		return fmt.Errorf("coding horizon: structured response: %w", err)
-	}
-
-	payload := strings.TrimSpace(response.OutputText())
-	if payload == "" {
-		return fmt.Errorf("coding horizon: structured response returned empty output")
-	}
-
-	if err := json.Unmarshal([]byte(payload), target); err != nil {
-		return fmt.Errorf("coding horizon: decode structured output: %w", err)
-	}
-
-	return nil
-}
 
 type intakeResult struct {
 	GoalTasks []Task `json:"goal_tasks"`
@@ -150,4 +79,20 @@ var auditSchema = map[string]any{
 	},
 	"required":             []string{"goal_met", "remaining_risks", "hygiene_remaining", "continue", "summary"},
 	"additionalProperties": false,
+}
+
+func decodeStructured(
+	openai *provider.OpenAI,
+	ctx context.Context,
+	system string,
+	user string,
+	output provider.StructuredOutput,
+	target any,
+) error {
+	payload, err := openai.CompleteStructured(ctx, system, user, output)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(payload, target)
 }

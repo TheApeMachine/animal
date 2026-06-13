@@ -5,8 +5,8 @@
 # to the same host path you set here.
 
 ai:
-  model: "iaprofesseur/SuperGemma4-26b-uncensored-Q4:latest"
-  endpoint: "http://localhost:11434/v1"
+  model: "openai/gpt-oss-20b"
+  endpoint: "http://192.168.0.147:1234/v1"
   apiKey: ${OPENAI_API_KEY}
   lease:
     idle_ttl_seconds: 900

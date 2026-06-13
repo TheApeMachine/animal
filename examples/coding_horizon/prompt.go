@@ -30,23 +30,19 @@ Design constraints for AI agents:
 - One primary file per slice.
 - Each slice must be independently verifiable with go test.
 - Prefer minimal diffs over rewrites.
-- Include exact old_fragment and new_fragment strings for replace when possible.
-
-Return JSON only matching the provided schema.`
+- Include exact old_fragment and new_fragment strings for replace when possible.`
 
 	intakeSystemPrompt = `You are the INTAKE phase of an AI-native coding loop.
 
 Decompose the user goal into atomic, independently verifiable goal tasks.
 Each task must name concrete target_files and an acceptance criterion provable by tests or inspection.
 
-Do not mimic human team roles. Optimize for machine verification and narrow context windows.
-Return JSON only matching the provided schema.`
+Do not mimic human team roles. Optimize for machine verification and narrow context windows.`
 
 	auditorSystemPrompt = `You are the AUDIT phase of an AI-native coding loop.
 
 Assume the latest change is wrong until evidence says otherwise.
-Judge goal satisfaction conservatively. Count remaining hygiene work.
-Return JSON only matching the provided schema.`
+Judge goal satisfaction conservatively. Count remaining hygiene work.`
 )
 
 func scoutUserPrompt(task Task, digest *RepoDigest, recon string) string {

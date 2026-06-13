@@ -31,7 +31,6 @@ func responseTools(tools []provider.ToolDefinition) []responses.ToolUnionParam {
 				Name:        tool.Name,
 				Description: openaiapi.String(tool.Description),
 				Parameters:  parameters,
-				Strict:      openaiapi.Bool(true),
 			},
 		})
 	}

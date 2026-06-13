@@ -99,14 +99,14 @@ func TestResponseTextConfig(t *testing.T) {
 				"required":             []any{"name", "age"},
 				"additionalProperties": false,
 			},
-			Strict: true,
+			Strict: false,
 		})
 
 		Convey("Then text.format should use json_schema", func() {
 			So(textConfig.Format.OfJSONSchema, ShouldNotBeNil)
 			So(textConfig.Format.OfJSONSchema.Name, ShouldEqual, "person")
 			So(textConfig.Format.OfJSONSchema.Description.Value, ShouldEqual, "A person record")
-			So(textConfig.Format.OfJSONSchema.Strict.Value, ShouldBeTrue)
+			So(textConfig.Format.OfJSONSchema.Strict.Valid(), ShouldBeFalse)
 			So(textConfig.Format.OfJSONSchema.Schema["type"], ShouldEqual, "object")
 		})
 	})
@@ -121,6 +121,50 @@ func TestStructuredOutputValidate(t *testing.T) {
 
 		Convey("Then Validate should reject it", func() {
 			So(err, ShouldNotBeNil)
+		})
+	})
+}
+
+/*
+TestJSONSchemaParam verifies chat response_format json_schema wiring.
+*/
+func TestJSONSchemaParam(t *testing.T) {
+	Convey("Given a structured output definition", t, func() {
+		schema := jsonSchemaParam(StructuredOutput{
+			Name:        "coding_plan",
+			Description: "Atomic replace slice",
+			Schema: map[string]any{
+				"type": "object",
+			},
+			Strict: false,
+		})
+
+		Convey("Then jsonSchemaParam should populate schema fields", func() {
+			So(schema.Name, ShouldEqual, "coding_plan")
+			So(schema.Description.Value, ShouldEqual, "Atomic replace slice")
+			So(schema.Strict.Valid(), ShouldBeFalse)
+			So(schema.Schema, ShouldNotBeNil)
+		})
+	})
+}
+
+/*
+TestValidateStructuredJSON verifies non-JSON endpoint responses are rejected.
+*/
+func TestValidateStructuredJSON(t *testing.T) {
+	Convey("Given markdown instead of JSON", t, func() {
+		err := validateStructuredJSON("```json\n{}\n```")
+
+		Convey("Then validateStructuredJSON should reject it", func() {
+			So(err, ShouldNotBeNil)
+		})
+	})
+
+	Convey("Given valid JSON", t, func() {
+		err := validateStructuredJSON(`{"goal_met":true}`)
+
+		Convey("Then validateStructuredJSON should accept it", func() {
+			So(err, ShouldBeNil)
 		})
 	})
 }

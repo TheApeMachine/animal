@@ -24,7 +24,7 @@ func NewParams() *Params {
 		Context:          NewContext(context.Background()),
 		Model:            "gpt-5.5-mini",
 		Messages:         make([]Message, 0),
-		Strict:           true,
+		Strict:           false,
 		Format:           "json_schema",
 		StructuredOutput: nil,
 	}

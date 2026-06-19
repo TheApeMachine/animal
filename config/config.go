@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/theapemachine/animal/storage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +29,7 @@ type AISection struct {
 	APIKey    string                  `yaml:"apiKey"`
 	Lease     LeaseSection            `yaml:"lease"`
 	Swarm     SwarmSection            `yaml:"swarm"`
+	Storage   storage.Config          `yaml:"storage,omitempty"`
 	Prompt    PromptSection           `yaml:"prompt,omitempty"`
 	Personas  map[string]PersonaYAML  `yaml:"personas"`
 	Workflows map[string]WorkflowYAML `yaml:"workflows"`

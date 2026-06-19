@@ -141,13 +141,9 @@ func withSession[T any](
 		return nil, zero, err
 	}
 
-	if result.Error != nil {
-		return nil, zero, result.Error
-	}
-
-	typed, ok := result.Value.(T)
-	if !ok {
-		return nil, zero, fmt.Errorf("browser: session action returned unexpected type %T", result.Value)
+	typed, valueErr := qpool.ArtifactValue[T](result)
+	if valueErr != nil {
+		return nil, zero, valueErr
 	}
 
 	return nil, typed, nil

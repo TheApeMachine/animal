@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/theapemachine/animal/a2a"
 	"github.com/theapemachine/animal/lease"
+	"github.com/theapemachine/datura"
+	"github.com/theapemachine/errnie"
 	"github.com/theapemachine/qpool"
 )
 
@@ -36,14 +39,14 @@ func (participant *Participant) View() *View {
 /*
 Incoming blocks until the next mesh rumor is available.
 */
-func (participant *Participant) Incoming() (*qpool.QValue[any], error) {
+func (participant *Participant) Incoming() (*datura.Artifact, error) {
 	return participant.subscriber.Wait(participant.ctx)
 }
 
 /*
 Poll returns the next pending mesh rumor without blocking.
 */
-func (participant *Participant) Poll() *qpool.QValue[any] {
+func (participant *Participant) Poll() *datura.Artifact {
 	if participant.subscriber == nil {
 		return nil
 	}
@@ -61,22 +64,47 @@ func (participant *Participant) Receive(rumor Rumor) error {
 }
 
 /*
+ReceiveArtifact merges any typed mesh artifact into the local view.
+*/
+func (participant *Participant) ReceiveArtifact(artifact *datura.Artifact) error {
+	if artifact == nil {
+		return errnie.Err(errnie.Validation, "swarm artifact is required", nil)
+	}
+
+	participant.view.PurgeExpired(time.Now())
+
+	switch qpool.BusMessageType(artifact) {
+	case MessageTypeRumor:
+		return participant.view.Merge(datura.As[Rumor](artifact))
+	case MessageTypeTask:
+		return participant.view.MergeTask(datura.As[a2a.Task](artifact))
+	case MessageTypeTaskStatus:
+		return participant.view.MergeTaskStatus(datura.As[a2a.TaskStatusUpdateEvent](artifact))
+	case MessageTypeSignal:
+		return participant.view.MergeSignal(datura.As[Signal](artifact))
+	case MessageTypeMetric:
+		return participant.view.MergeMetric(datura.As[Metric](artifact))
+	default:
+		return errnie.Err(
+			errnie.Validation,
+			fmt.Sprintf("swarm artifact type %q is unsupported", qpool.BusMessageType(artifact)),
+			nil,
+		)
+	}
+}
+
+/*
 Drain ingests all pending mesh rumors without blocking.
 */
 func (participant *Participant) Drain() error {
 	for {
-		qv := participant.subscriber.Poll()
-		if qv == nil {
+		artifact := participant.subscriber.Poll()
+
+		if artifact == nil {
 			return nil
 		}
 
-		rumor, ok := qv.Value.(Rumor)
-
-		if !ok {
-			return fmt.Errorf("swarm: mesh received non-rumor payload for actor %q", participant.actorID)
-		}
-
-		if err := participant.Receive(rumor); err != nil {
+		if err := participant.ReceiveArtifact(artifact); err != nil {
 			return err
 		}
 	}
@@ -86,7 +114,14 @@ func (participant *Participant) Drain() error {
 Announce publishes a roadmap or situational payload to the mesh.
 */
 func (participant *Participant) Announce(topic, payload string) error {
-	rumor := NewRumorAt(KindAnnounce, participant.actorID, participant.actorName, participant.role, time.Now())
+	rumor := NewRumorAt(
+		KindAnnounce,
+		participant.actorID,
+		participant.actorName,
+		participant.role,
+		time.Now(),
+	)
+
 	rumor.Topic = topic
 	rumor.Payload = payload
 
@@ -105,7 +140,14 @@ func (participant *Participant) TryClaim(prefix string) error {
 		return err
 	}
 
-	rumor := NewRumorAt(KindClaim, participant.actorID, participant.actorName, participant.role, time.Now())
+	rumor := NewRumorAt(
+		KindClaim,
+		participant.actorID,
+		participant.actorName,
+		participant.role,
+		time.Now(),
+	)
+
 	rumor.Prefix = prefix
 
 	if err := participant.view.Merge(rumor); err != nil {
@@ -119,11 +161,21 @@ func (participant *Participant) TryClaim(prefix string) error {
 Release drops a lease and publishes a gossip release rumor.
 */
 func (participant *Participant) Release(prefix string) error {
-	if err := participant.coordinator.ReleaseID(prefix, participant.actorID); err != nil {
+	if err := participant.coordinator.ReleaseID(
+		prefix,
+		participant.actorID,
+	); err != nil {
 		return err
 	}
 
-	rumor := NewRumorAt(KindRelease, participant.actorID, participant.actorName, participant.role, time.Now())
+	rumor := NewRumorAt(
+		KindRelease,
+		participant.actorID,
+		participant.actorName,
+		participant.role,
+		time.Now(),
+	)
+
 	rumor.Prefix = prefix
 
 	if err := participant.view.Merge(rumor); err != nil {
@@ -137,7 +189,14 @@ func (participant *Participant) Release(prefix string) error {
 PublishStatus emits a heartbeat-style status rumor.
 */
 func (participant *Participant) PublishStatus(state string) error {
-	rumor := NewRumorAt(KindStatus, participant.actorID, participant.actorName, participant.role, time.Now())
+	rumor := NewRumorAt(
+		KindStatus,
+		participant.actorID,
+		participant.actorName,
+		participant.role,
+		time.Now(),
+	)
+
 	rumor.State = state
 
 	if err := participant.view.Merge(rumor); err != nil {
@@ -165,5 +224,12 @@ func (participant *Participant) TryClaimConfigured() (string, error) {
 		return prefix, nil
 	}
 
-	return "", fmt.Errorf("swarm: no configured prefix available for actor %q", participant.actorID)
+	return "", errnie.Error(errnie.Err(
+		errnie.NotFound,
+		fmt.Sprintf(
+			"no configured prefix available for actor %q",
+			participant.actorID,
+		),
+		nil,
+	))
 }

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/theapemachine/animal/a2a"
 	"github.com/theapemachine/animal/internal"
 )
 
@@ -59,6 +60,9 @@ type viewSnapshot struct {
 	claims    map[string]claimRecord
 	announces []announceRecord
 	statuses  map[string]statusRecord
+	tasks     map[string]a2a.Task
+	signals   []Signal
+	metrics   []Metric
 }
 
 func newViewSnapshot() viewSnapshot {
@@ -66,6 +70,9 @@ func newViewSnapshot() viewSnapshot {
 		claims:    make(map[string]claimRecord),
 		announces: make([]announceRecord, 0),
 		statuses:  make(map[string]statusRecord),
+		tasks:     make(map[string]a2a.Task),
+		signals:   make([]Signal, 0),
+		metrics:   make([]Metric, 0),
 	}
 }
 
@@ -76,12 +83,20 @@ func cloneViewSnapshot(snapshot viewSnapshot) viewSnapshot {
 	statuses := make(map[string]statusRecord, len(snapshot.statuses))
 	maps.Copy(statuses, snapshot.statuses)
 
+	tasks := make(map[string]a2a.Task, len(snapshot.tasks))
+	maps.Copy(tasks, snapshot.tasks)
+
 	announces := append([]announceRecord(nil), snapshot.announces...)
+	signals := append([]Signal(nil), snapshot.signals...)
+	metrics := append([]Metric(nil), snapshot.metrics...)
 
 	return viewSnapshot{
 		claims:    claims,
 		announces: announces,
 		statuses:  statuses,
+		tasks:     tasks,
+		signals:   signals,
+		metrics:   metrics,
 	}
 }
 
@@ -169,6 +184,26 @@ func (view *View) PurgeExpired(now time.Time) {
 
 			delete(updated.statuses, actorID)
 		}
+
+		signals := updated.signals[:0]
+
+		for _, signal := range updated.signals {
+			if signal.At >= cutoff {
+				signals = append(signals, signal)
+			}
+		}
+
+		updated.signals = signals
+
+		metrics := updated.metrics[:0]
+
+		for _, metric := range updated.metrics {
+			if metric.At >= cutoff {
+				metrics = append(metrics, metric)
+			}
+		}
+
+		updated.metrics = metrics
 
 		return updated
 	})

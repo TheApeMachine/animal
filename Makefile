@@ -1,4 +1,4 @@
-.PHONY: build run clean test example-swarm-parallel-claims example-swarm-roadmap-gossip example-swarm-agent-cycle example-lease-workspace example-editor-mcp example-conversation-salon example-coding-horizon example-coding-horizon-dry examples
+.PHONY: build run clean test example-swarm-parallel-claims example-swarm-roadmap-gossip example-swarm-agent-cycle example-lease-workspace example-editor-mcp example-alcatraz-session test-alcatraz-session example-conversation-salon example-coding-horizon example-coding-horizon-dry examples
 
 # The pool package uses go:linkname to access runtime scheduling
 # primitives (dropg, readgstatus) for zero-overhead goroutine parking.
@@ -36,6 +36,12 @@ example-lease-workspace:
 
 example-editor-mcp:
 	go run $(LDFLAGS) ./examples/editor_mcp
+
+example-alcatraz-session:
+	cd examples/alcatraz_session && go run $(LDFLAGS) .
+
+test-alcatraz-session:
+	cd examples/alcatraz_session && go test $(LDFLAGS) -race ./...
 
 example-browser-mcp:
 	go run $(LDFLAGS) ./examples/browser_mcp

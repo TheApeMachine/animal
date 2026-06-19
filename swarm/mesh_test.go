@@ -6,7 +6,9 @@ import (
 	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
+	"github.com/theapemachine/animal/a2a"
 	"github.com/theapemachine/animal/lease"
+	"github.com/theapemachine/datura"
 	"github.com/theapemachine/qpool"
 )
 
@@ -40,13 +42,12 @@ func TestNewMesh(t *testing.T) {
 			publishErr := mesh.Publish("actor-b", rumor)
 			So(publishErr, ShouldBeNil)
 
-			qv, waitErr := waitBroadcastConsumer(ctx, subscriber, time.Second)
+			artifact, waitErr := waitBroadcastConsumer(ctx, subscriber, time.Second)
 			So(waitErr, ShouldBeNil)
 
-			payload, ok := qv.Value.(Rumor)
+			payload := datura.As[Rumor](artifact)
 
 			Convey("Then actor-a should receive the rumor", func() {
-				So(ok, ShouldBeTrue)
 				So(payload.State, ShouldEqual, "idle")
 			})
 		})
@@ -106,11 +107,10 @@ func TestParticipantTryClaim(t *testing.T) {
 			claimErr := first.TryClaim("lanes/a/")
 			So(claimErr, ShouldBeNil)
 
-			qv, waitErr := waitParticipant(ctx, second, time.Second)
+			artifact, waitErr := waitParticipant(ctx, second, time.Second)
 			So(waitErr, ShouldBeNil)
 
-			rumor, ok := qv.Value.(Rumor)
-			So(ok, ShouldBeTrue)
+			rumor := datura.As[Rumor](artifact)
 			So(rumor.Kind, ShouldEqual, KindClaim)
 
 			Convey("And actor-b attempts the same prefix", func() {
@@ -119,6 +119,86 @@ func TestParticipantTryClaim(t *testing.T) {
 				Convey("Then the lease should reject the conflicting claim", func() {
 					So(conflictErr, ShouldNotBeNil)
 				})
+			})
+		})
+	})
+}
+
+/*
+TestParticipantPublishTaskSignalMetric verifies typed swarm artifact delivery.
+*/
+func TestParticipantPublishTaskSignalMetric(t *testing.T) {
+	Convey("Given two swarm participants", t, func() {
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		registry, err := NewRegistry(ctx, pool, testSwarmOptions(), lease.Options{
+			KeySpace: lease.PathKeySpace{},
+			IdleTTL:  time.Minute,
+		})
+		So(err, ShouldBeNil)
+
+		first, err := registry.NewParticipant("actor-a", "Ada", "developer", nil)
+		So(err, ShouldBeNil)
+
+		second, err := registry.NewParticipant("actor-b", "Bob", "developer", nil)
+		So(err, ShouldBeNil)
+
+		task := a2a.Task{
+			ID: "task-1",
+			Status: a2a.TaskStatus{
+				State: a2a.TaskStateSubmitted,
+			},
+			History: []a2a.Message{
+				{
+					Role: a2a.RoleUser,
+					Parts: []a2a.Part{
+						{Text: "Check the shared lease friction."},
+					},
+				},
+			},
+		}
+
+		Convey("When task, signal, and metric artifacts are published", func() {
+			So(first.PublishTask(task), ShouldBeNil)
+
+			artifact, waitErr := waitParticipant(ctx, second, time.Second)
+			So(waitErr, ShouldBeNil)
+			So(second.ReceiveArtifact(artifact), ShouldBeNil)
+
+			So(first.ReportSignal(
+				SignalBlocker,
+				"goal-1",
+				"task-1",
+				"lease unavailable",
+				"prefix lanes/a is already claimed",
+			), ShouldBeNil)
+
+			artifact, waitErr = waitParticipant(ctx, second, time.Second)
+			So(waitErr, ShouldBeNil)
+			So(second.ReceiveArtifact(artifact), ShouldBeNil)
+
+			So(first.ReportMetric(
+				"goal-1",
+				"task-1",
+				"tests_passed",
+				1,
+				true,
+				"go test ./...",
+			), ShouldBeNil)
+
+			artifact, waitErr = waitParticipant(ctx, second, time.Second)
+			So(waitErr, ShouldBeNil)
+			So(second.ReceiveArtifact(artifact), ShouldBeNil)
+
+			Convey("Then the receiver view should merge all typed artifacts", func() {
+				storedTask, ok := second.View().Task("task-1")
+				So(ok, ShouldBeTrue)
+				So(storedTask.Instruction(), ShouldEqual, "Check the shared lease friction.")
+				So(len(second.View().RecentSignals()), ShouldEqual, 1)
+				So(second.View().RecentSignals()[0].Kind, ShouldEqual, SignalBlocker)
+				So(len(second.View().RecentMetrics()), ShouldEqual, 1)
+				So(second.View().RecentMetrics()[0].Success, ShouldBeTrue)
 			})
 		})
 	})

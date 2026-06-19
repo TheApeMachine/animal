@@ -105,6 +105,64 @@ Please always follow this shape, and I want to specifically highlight the constr
 - **Method size:** target under 30 lines. Methods over 60 lines must be decomposed unless the operation is genuinely atomic (e.g. a single assembly kernel body).
 - **Type size:** if a type has more than ~10 methods, it is doing more than one thing.
 
+This does *not* mean just move some methods to a new file and call it done. What this means is find the additional responsibilities that the object (type) is doing and compose those onto the current type as a new type. So take the example code above as the type that is over the line count, and do something like:
+
+```go
+/*
+ObjectName is something descriptive.
+It also has a reason why it was implemented.
+*/
+type ObjectName struct {
+    ctx      context.Context
+    cancel   context.CancelFunc
+    err      error
+    composed ComposedObject
+}
+
+/*
+NewObjectName instantiates a new ObjectName.
+It also has a reason for being instantiated.
+*/
+func NewObjectName(ctx context.Context) (*ObjectName, error) {
+    ctx, cancel := ctx.WithCancel(ctx)
+
+    obj := &ObjectName{
+        ctx:      ctx,
+        cancel:   cancel,
+        composed: NewComposedObject(ctx)
+    }
+
+    return obj, errnie.Require(map[string]any {
+        "ctx":    obj.ctx,
+        "cancel": obj.cancel,
+    })
+}
+```
+
+You should recognize objects that do too much when you have naming that is longer than two segments in either method names or object names.
+
+```go
+/*
+MethodName.
+*/
+func (objectName *ObjectName) updateSomethingUnrelated() {
+    return
+}
+```
+
+Something like that is usually a good indicator that things are doing to much. In general you want to have one or two segments in names max. Above the ObjectName type is updating something that isn't itself.
+
+```go
+/*
+MethodName.
+*/
+func (objectName *ObjectName) update() {
+    return
+}
+```
+
+Now ObjectName is clearly updating itself.
+
 ### Control flow
 
 - Guard clauses with early return. The happy path stays at indent level 1.
@@ -289,3 +347,40 @@ Always keep the following non-negotiable rules in mind.
 1. Accuracy and Performance are the primary concerns, always. If we compromise on Accuracy or Performance, there is no point for anyone to use this framework.
 2. You should NOT optimize for the path of least resistance, just to get tests green, or compiler errors resolved. Optimize for Accuracy, Performance, and Maintainability.
 3. If you notice you are drifting to any kind of escape hatch, or less than optimal solution, stop, reconsider, and make better choices.
+
+## 11. Final Checklist
+
+1. **Always check nomagique, qpool, datura, and errnie** They give you a lot of nice primitives and abstractions to work with. Always prefer them over building things from scratch.
+
+For example, which is an excellent, and correct way to use nomagique (always work from a `nomagique.Number`):
+
+```go
+nomagique.Number(
+    statistic.NewPanel(),
+    statistic.NewMedian(nil, nil),
+    ladder,
+    probability.NewClassifier(
+        ladder.UpliftReading(),
+        ladder.ContagionReading(),
+        ladder.AssociationReading(),
+        ladder.InterventionReading(),
+    ),
+    probability.NewTransitionSurprise(
+        4, 1.0/float64(viper.GetInt("signals.feed_ring_capacity")),
+    ),
+)
+```
+
+2. **Errors** Use `errnie` (example below). The variable for errors is `err` at all times and not anything else.
+
+```go
+// errnie.Error is logging, errnie.Err is our custom error type.
+errnie.Error(errnie.Err(
+    errnie.Validation, // This is *NOT* the default, use the correct errnie.Kind
+    "some error message",
+    err, // The original error, or nil if no err exist.
+))
+```
+
+3. **Tests** Use Goconvey, and mirror the file names and method names, use nested BDD style, test meaningful things and add benchmarks at the bottom. The variable for testing.T is `t` and not `testingTB`
+4. **Complexity** Has to be earned. No "helper" methods with just one line of code, no overly defensive programming, and no abstractions that require many hops to understand. Keep it simple first, then we will see if we want to abstract complexity away afterwards.

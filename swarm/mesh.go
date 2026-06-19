@@ -33,7 +33,7 @@ func NewMesh(
 	mesh := &Mesh{
 		ctx:       ctx,
 		cancel:    cancel,
-		group:     pool.CreateBroadcastGroup(options.MeshID, options.MeshTTL),
+		group:     pool.CreateBroadcastGroup(options.MeshID),
 		gossipTTL: options.GossipTTL,
 	}
 
@@ -57,7 +57,7 @@ func (mesh *Mesh) Subscribe(actorID string, buffer int) (*qpool.BroadcastConsume
 		return nil, fmt.Errorf("swarm: subscriber buffer is required")
 	}
 
-	subscriber := mesh.group.Subscribe(actorID, buffer)
+	subscriber := mesh.group.Acquire(actorID, nil)
 
 	if subscriber == nil {
 		return nil, fmt.Errorf("swarm: mesh subscribe failed for actor %q", actorID)
@@ -67,22 +67,41 @@ func (mesh *Mesh) Subscribe(actorID string, buffer int) (*qpool.BroadcastConsume
 }
 
 /*
-Publish sends a rumor to all mesh subscribers except the sender.
+Publish sends a rumor to all mesh subscribers.
 */
 func (mesh *Mesh) Publish(senderID string, rumor Rumor) error {
 	if err := rumor.Validate(); err != nil {
 		return err
 	}
 
-	qv, err := qpool.NewQValue[any](senderID, "", rumor, mesh.gossipTTL)
+	return mesh.PublishValue(senderID, MessageTypeRumor, rumor)
+}
+
+/*
+PublishValue sends any typed swarm artifact to all mesh subscribers.
+*/
+func (mesh *Mesh) PublishValue(
+	senderID string,
+	messageType string,
+	value any,
+) error {
+	if messageType == "" {
+		return fmt.Errorf("swarm: message type is required")
+	}
+
+	artifact, err := qpool.NewBusArtifact(
+		senderID,
+		senderID,
+		messageType,
+		value,
+		mesh.gossipTTL,
+	)
 
 	if err != nil {
 		return err
 	}
 
-	mesh.group.Send(qv)
-
-	return nil
+	return mesh.group.Send(artifact)
 }
 
 /*

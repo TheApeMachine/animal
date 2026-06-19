@@ -12,12 +12,26 @@ All examples need the qpool linkname flag on Go 1.26+. Use the Makefile targets 
 | [swarm_roadmap_gossip](./swarm_roadmap_gossip/) | `make example-swarm-roadmap-gossip` | PM publishes `roadmap.announce`; developer merges it into a local view |
 | [swarm_agent_cycle](./swarm_agent_cycle/) | `make example-swarm-agent-cycle` | Phase 1: `Agent.Cycle()` merges swarm gossip. Phase 2: calls `ai.endpoint` for an LLM reply (needs a local OpenAI-compatible server) |
 
+The swarm package also exposes generic A2A task broadcasts, task lifecycle events, submitted-task queries, blocker queries, friction/quality/opportunity signals, and normalized success metrics. These use the same mesh and local `View` merge path as gossip and leases.
+
 ## Leasing and editor
 
 | Example | Command | What it shows |
 |---------|---------|---------------|
 | [lease_workspace](./lease_workspace/) | `make example-lease-workspace` | Path-prefix leases, advisory `ChangingError` on read, gated writes, FS replace |
 | [editor_mcp](./editor_mcp/) | `make example-editor-mcp` | MCP SSE editor on `:3000` (set `ANIMAL_AGENT_WORKSPACE` first) |
+
+`ai/tool/alcatraz` can wrap an `io.ReadWriter` such as `github.com/theapemachine/alcatraz/pkg/environment.Session`: environment stdout/stderr is read as agent prompt input, and assistant output is written to environment stdin. It also exposes `alcatraz_read` and `alcatraz_write` MCP tools.
+
+`ai/session` binds an `ai.Agent`, streaming provider, and alcatraz bridge so streamed model deltas are written to stdin as they arrive. It can also run an A2A task by cloning the agent, claiming a `lease_prefix` metadata value when present, and reporting completion metrics or blocker signals through swarm.
+
+## Alcatraz session
+
+| Example | Command | What it shows |
+|---------|---------|---------------|
+| [alcatraz_session](./alcatraz_session/) | `make example-alcatraz-session` | Starts a hardened alcatraz environment, attaches a live exec stream, wraps it with `ai/tool/alcatraz`, and runs one `ai/session.Cycle()` |
+
+Run `make test-alcatraz-session` for the nested example module tests. Docker is required for the runnable example.
 
 ## Conversation
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/viper"
+	"github.com/theapemachine/datura"
 	"github.com/theapemachine/errnie"
 	"github.com/theapemachine/qpool"
 )
@@ -43,17 +44,13 @@ func NewBus(
 	}
 
 	for _, broadcast := range broadcasts {
-		bus.broadcasts[broadcast] = pool.CreateBroadcastGroup(
-			broadcast.String(),
-			viper.GetDuration("system.queue.ttl"),
-		)
+		bus.broadcasts[broadcast] = pool.CreateBroadcastGroup(broadcast.String())
 	}
 
 	for _, subscription := range subscriptions {
 		if bus.broadcasts[subscription.Channel] == nil {
 			bus.broadcasts[subscription.Channel] = pool.CreateBroadcastGroup(
 				subscription.Channel.String(),
-				viper.GetDuration("system.queue.ttl"),
 			)
 		}
 
@@ -63,9 +60,9 @@ func NewBus(
 			subscriberName = subscription.Channel.String()
 		}
 
-		bus.subscribers[subscription.Channel] = bus.broadcasts[subscription.Channel].Subscribe(
+		bus.subscribers[subscription.Channel] = bus.broadcasts[subscription.Channel].Acquire(
 			subscriberName,
-			viper.GetInt("system.queue.buffer"),
+			nil,
 		)
 	}
 
@@ -75,7 +72,7 @@ func NewBus(
 /*
 Receive blocks until the next message is available on the given channel.
 */
-func (bus *Bus) Receive(channel Channel) (*qpool.QValue[any], error) {
+func (bus *Bus) Receive(channel Channel) (*datura.Artifact, error) {
 	if bus.subscribers[channel] == nil {
 		return nil, errnie.Err(
 			errnie.Validation,
@@ -90,7 +87,7 @@ func (bus *Bus) Receive(channel Channel) (*qpool.QValue[any], error) {
 /*
 Poll returns the next message on the given channel without blocking.
 */
-func (bus *Bus) Poll(channel Channel) (*qpool.QValue[any], error) {
+func (bus *Bus) Poll(channel Channel) (*datura.Artifact, error) {
 	if bus.subscribers[channel] == nil {
 		return nil, errnie.Err(
 			errnie.Validation,
@@ -116,12 +113,19 @@ func (bus *Bus) Send(
 		)
 	}
 
-	bus.broadcasts[channel].Send(&qpool.QValue[any]{
-		Type:  messageType,
-		Value: value,
-	})
+	artifact, err := qpool.NewBusArtifact(
+		channel.String(),
+		channel.String(),
+		messageType,
+		value,
+		viper.GetDuration("system.queue.ttl"),
+	)
 
-	return nil
+	if err != nil {
+		return err
+	}
+
+	return bus.broadcasts[channel].Send(artifact)
 }
 
 /*

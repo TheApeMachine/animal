@@ -168,3 +168,20 @@ func TestValidateStructuredJSON(t *testing.T) {
 		})
 	})
 }
+
+/*
+TestStreamWithSink verifies stream sink validation before network work starts.
+*/
+func TestStreamWithSink(t *testing.T) {
+	Convey("Given a nil stream sink", t, func() {
+		openai := testOpenAIProvider(t)
+
+		Convey("When StreamWithSink is called", func() {
+			err := openai.StreamWithSink("", NewContext(context.Background()), NewParams(), nil)
+
+			Convey("Then it should reject the call", func() {
+				So(err, ShouldNotBeNil)
+			})
+		})
+	})
+}

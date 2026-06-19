@@ -1,0 +1,190 @@
+package session
+
+import (
+	"bytes"
+	"context"
+	"testing"
+
+	. "github.com/smartystreets/goconvey/convey"
+	"github.com/spf13/viper"
+	"github.com/theapemachine/animal/ai"
+	"github.com/theapemachine/animal/ai/provider"
+	alcatraztool "github.com/theapemachine/animal/ai/tool/alcatraz"
+	"github.com/theapemachine/qpool"
+)
+
+type fakeTerminal struct {
+	readBuffer  *bytes.Buffer
+	writeBuffer bytes.Buffer
+}
+
+func newFakeTerminal(output string) *fakeTerminal {
+	return &fakeTerminal{readBuffer: bytes.NewBufferString(output)}
+}
+
+func (terminal *fakeTerminal) Read(payload []byte) (int, error) {
+	return terminal.readBuffer.Read(payload)
+}
+
+func (terminal *fakeTerminal) Write(payload []byte) (int, error) {
+	return terminal.writeBuffer.Write(payload)
+}
+
+type fakeStreamer struct {
+	deltas []string
+	err    error
+}
+
+func (streamer *fakeStreamer) StreamWithSink(
+	system string,
+	agentCtx *provider.Context,
+	params *provider.Params,
+	sink func(string) error,
+) error {
+	for _, delta := range streamer.deltas {
+		if err := sink(delta); err != nil {
+			return err
+		}
+	}
+
+	return streamer.err
+}
+
+func configureSessionTestViper() {
+	viper.Set("ai.prompt.template.system", "You are {{ agent.name }}, a {{ agent.role }}.")
+	viper.Set("project.name", "Animal")
+	viper.Set("project.description", "Multi-agent coordination harness.")
+}
+
+func TestNewSession(t *testing.T) {
+	Convey("Given all required session dependencies", t, func() {
+		configureSessionTestViper()
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", nil, nil)
+		So(err, ShouldBeNil)
+
+		bridge, err := alcatraztool.NewBridge(ctx, newFakeTerminal("ready"))
+		So(err, ShouldBeNil)
+
+		Convey("When NewSession is called", func() {
+			session, sessionErr := NewSession(
+				ctx,
+				agent,
+				&fakeStreamer{deltas: []string{"pwd\n"}},
+				bridge,
+				provider.NewParams(),
+			)
+
+			Convey("Then it should create a session", func() {
+				So(sessionErr, ShouldBeNil)
+				So(session, ShouldNotBeNil)
+			})
+		})
+	})
+}
+
+func TestCycle(t *testing.T) {
+	Convey("Given a session with environment output and streamed deltas", t, func() {
+		configureSessionTestViper()
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", nil, nil)
+		So(err, ShouldBeNil)
+
+		terminal := newFakeTerminal("shell ready\n")
+		bridge, err := alcatraztool.NewBridge(ctx, terminal)
+		So(err, ShouldBeNil)
+
+		session, err := NewSession(
+			ctx,
+			agent,
+			&fakeStreamer{deltas: []string{"make", " test", "\n"}},
+			bridge,
+			provider.NewParams(),
+		)
+		So(err, ShouldBeNil)
+
+		Convey("When Cycle is called", func() {
+			result, cycleErr := session.Cycle()
+
+			Convey("Then prompt input is appended and streamed output reaches stdin", func() {
+				So(cycleErr, ShouldBeNil)
+				So(result.Status, ShouldEqual, StatusCompleted)
+				So(result.Prompt.Content, ShouldEqual, "shell ready\n")
+				So(result.Assistant.Content, ShouldEqual, "make test\n")
+				So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
+				So(len(agent.Context.Messages), ShouldEqual, 2)
+				So(agent.Context.Messages[0].Role, ShouldEqual, "user")
+				So(agent.Context.Messages[1].Role, ShouldEqual, "assistant")
+			})
+		})
+	})
+}
+
+func TestClose(t *testing.T) {
+	Convey("Given a session", t, func() {
+		configureSessionTestViper()
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", nil, nil)
+		So(err, ShouldBeNil)
+
+		bridge, err := alcatraztool.NewBridge(ctx, newFakeTerminal("ready"))
+		So(err, ShouldBeNil)
+
+		session, err := NewSession(
+			ctx,
+			agent,
+			&fakeStreamer{deltas: []string{"pwd\n"}},
+			bridge,
+			provider.NewParams(),
+		)
+		So(err, ShouldBeNil)
+
+		Convey("When Close is called", func() {
+			closeErr := session.Close()
+
+			Convey("Then it should cancel the session scope", func() {
+				So(closeErr, ShouldBeNil)
+				So(session.ctx.Err(), ShouldNotBeNil)
+			})
+		})
+	})
+}
+
+func BenchmarkCycle(benchmark *testing.B) {
+	configureSessionTestViper()
+	ctx := context.Background()
+	pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+	for benchmark.Loop() {
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", nil, nil)
+		if err != nil {
+			benchmark.Fatal(err)
+		}
+
+		bridge, err := alcatraztool.NewBridge(ctx, newFakeTerminal("ready\n"))
+		if err != nil {
+			benchmark.Fatal(err)
+		}
+
+		session, err := NewSession(
+			ctx,
+			agent,
+			&fakeStreamer{deltas: []string{"pwd\n"}},
+			bridge,
+			provider.NewParams(),
+		)
+		if err != nil {
+			benchmark.Fatal(err)
+		}
+
+		if _, err := session.Cycle(); err != nil {
+			benchmark.Fatal(err)
+		}
+	}
+}

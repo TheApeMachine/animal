@@ -115,3 +115,34 @@ func TestViewPurgeExpired(t *testing.T) {
 		})
 	})
 }
+
+/*
+TestViewPurgeExpiredSignalsAndMetrics verifies event entries expire after the TTL window.
+*/
+func TestViewPurgeExpiredSignalsAndMetrics(t *testing.T) {
+	Convey("Given a view with stale signal and metric entries", t, func() {
+		view, err := NewView(10 * time.Millisecond)
+		So(err, ShouldBeNil)
+
+		stamp := time.Now().Add(-20 * time.Millisecond)
+
+		signal := NewSignalAt(SignalFriction, "actor-a", "Ada", "developer", stamp)
+		signal.Summary = "context drift"
+		So(view.MergeSignal(signal), ShouldBeNil)
+
+		metric := NewMetricAt("actor-a", "Ada", "developer", stamp)
+		metric.Name = "tests_passed"
+		metric.Score = 1
+		metric.Success = true
+		So(view.MergeMetric(metric), ShouldBeNil)
+
+		Convey("When PurgeExpired runs", func() {
+			view.PurgeExpired(time.Now())
+
+			Convey("Then stale signals and metrics should be removed", func() {
+				So(len(view.RecentSignals()), ShouldEqual, 0)
+				So(len(view.RecentMetrics()), ShouldEqual, 0)
+			})
+		})
+	})
+}

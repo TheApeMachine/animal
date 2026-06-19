@@ -1,6 +1,10 @@
 package provider
 
-import "context"
+import (
+	"context"
+
+	"github.com/theapemachine/errnie"
+)
 
 /*
 Context accumulates the rolling message history for one agent or completion request.
@@ -28,4 +32,56 @@ func NewContext(ctx context.Context, opts ...contextOptions) *Context {
 		err:      nil,
 		Messages: make([]Message, 0),
 	}
+}
+
+/*
+Clone copies the message history into a new cancellable context scope.
+*/
+func (agentCtx *Context) Clone(ctx context.Context) (*Context, error) {
+	if agentCtx == nil {
+		return nil, errnie.Err(
+			errnie.Validation,
+			"provider context is required",
+			nil,
+		)
+	}
+
+	clone := NewContext(ctx)
+	clone.Messages = append(clone.Messages, agentCtx.Messages...)
+
+	return clone, nil
+}
+
+/*
+Append adds one message to the context history.
+*/
+func (agentCtx *Context) Append(message Message) error {
+	if agentCtx == nil {
+		return errnie.Err(
+			errnie.Validation,
+			"provider context is required",
+			nil,
+		)
+	}
+
+	agentCtx.Messages = append(agentCtx.Messages, message)
+
+	return nil
+}
+
+/*
+Replace swaps the entire message history.
+*/
+func (agentCtx *Context) Replace(messages []Message) error {
+	if agentCtx == nil {
+		return errnie.Err(
+			errnie.Validation,
+			"provider context is required",
+			nil,
+		)
+	}
+
+	agentCtx.Messages = append(agentCtx.Messages[:0], messages...)
+
+	return nil
 }

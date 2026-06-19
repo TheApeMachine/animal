@@ -19,6 +19,7 @@ import (
 	"github.com/theapemachine/animal/ai"
 	"github.com/theapemachine/animal/ai/provider"
 	"github.com/theapemachine/animal/examples/support"
+	"github.com/theapemachine/animal/internal"
 	"github.com/theapemachine/animal/swarm"
 	"github.com/theapemachine/qpool"
 )
@@ -90,14 +91,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	broadcast, err := qpool.NewBroadcastGroup(ctx, "example-agent-cycle-stream", 64*time.Second)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "broadcast: %v\n", err)
-		os.Exit(1)
-	}
-
-	consumer := broadcast.Subscribe("example-agent-cycle-stream", 64)
+	consumer := pool.CreateBroadcastGroup(internal.ChannelMessages.String()).Acquire(
+		"example-agent-cycle-stream",
+		nil,
+	)
 
 	go func() {
 		for {
@@ -105,14 +102,21 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				qv, err := consumer.Wait(ctx)
+				artifact, waitErr := consumer.Wait(ctx)
 
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "consumer wait: %v\n", err)
+				if waitErr != nil {
+					fmt.Fprintf(os.Stderr, "consumer wait: %v\n", waitErr)
 					return
 				}
 
-				fmt.Printf("Ada: %s\n", qv.Value)
+				chunk, decodeErr := qpool.ArtifactValue[string](artifact)
+
+				if decodeErr != nil {
+					fmt.Fprintf(os.Stderr, "consumer decode: %v\n", decodeErr)
+					continue
+				}
+
+				fmt.Printf("Ada: %s\n", chunk)
 			}
 		}
 	}()

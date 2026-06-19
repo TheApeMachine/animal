@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	openaiapi "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/theapemachine/animal/internal"
 	"github.com/theapemachine/errnie"
@@ -198,45 +195,27 @@ Stream sends response text deltas to broadcast until the model finishes.
 func (openai *OpenAI) Stream(
 	system string, agentCtx *Context, params *Params,
 ) error {
-	if agentCtx == nil {
-		return errnie.Err(
-			errnie.Validation,
-			"provider stream requires agent context",
-			nil,
-		)
+	return openai.StreamWithSink(system, agentCtx, params, func(delta string) error {
+		return openai.bus.Send(internal.ChannelMessages, "text", delta)
+	})
+}
+
+/*
+StreamWithSink sends response text deltas to sink until the model finishes.
+*/
+func (openai *OpenAI) StreamWithSink(
+	system string,
+	agentCtx *Context,
+	params *Params,
+	sink func(string) error,
+) error {
+	if sink == nil {
+		return errnie.Err(errnie.Validation, "provider stream sink is required", nil)
 	}
 
-	inputItems, err := openai.responseInputItems(agentCtx.Messages)
-
+	request, err := openai.responseRequest(system, agentCtx, params)
 	if err != nil {
-		return errnie.Err(
-			errnie.Validation,
-			"provider stream input build failed",
-			err,
-		)
-	}
-
-	request := responses.ResponseNewParams{
-		Model: openai.model,
-		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: inputItems,
-		},
-	}
-
-	if strings.TrimSpace(system) != "" {
-		request.Instructions = param.NewOpt(system)
-	}
-
-	if params.StructuredOutput != nil {
-		if err := params.StructuredOutput.Validate(); err != nil {
-			return errnie.Err(
-				errnie.Validation,
-				"provider stream structured output invalid",
-				err,
-			)
-		}
-
-		request.Text = openai.textConfig(*params.StructuredOutput)
+		return err
 	}
 
 	stream := openai.client.Responses.NewStreaming(openai.ctx, request)
@@ -253,163 +232,18 @@ func (openai *OpenAI) Stream(
 		event := stream.Current()
 		deltaEvent := event.AsResponseOutputTextDelta()
 
-		if strings.TrimSpace(deltaEvent.Delta) == "" {
+		if deltaEvent.Delta == "" {
 			continue
 		}
 
-		qv, err := qpool.NewQValue[any]("", "", deltaEvent.Delta, time.Minute)
-
-		if err != nil {
+		if err := sink(deltaEvent.Delta); err != nil {
 			return errnie.Err(
 				errnie.IO,
-				"provider stream qvalue failed",
+				"provider stream sink failed",
 				err,
-			)
-		}
-
-		if err := openai.bus.Send(internal.ChannelMessages, "text", qv.Value); err != nil {
-			return errnie.Err(
-				errnie.IO,
-				"provider stream bus send failed",
-				errnie.Err(
-					errnie.Validation,
-					"provider stream bus send failed",
-					err,
-				),
 			)
 		}
 	}
 
 	return errnie.Error(stream.Err())
-}
-
-func (openai *OpenAI) responseInputItems(agentMessages []Message) (responses.ResponseInputParam, error) {
-	input := make(responses.ResponseInputParam, 0, len(agentMessages))
-
-	for _, message := range agentMessages {
-		items, err := openai.inputItemsForMessage(message)
-		if err != nil {
-			return nil, errnie.Err(
-				errnie.Validation,
-				"provider response input items for message failed",
-				err,
-			)
-		}
-
-		input = append(input, items...)
-	}
-
-	if len(input) == 0 {
-		return nil, errnie.Err(
-			errnie.Validation,
-			"provider response input items requires at least one message",
-			nil,
-		)
-	}
-
-	return input, nil
-}
-
-func (openai *OpenAI) inputItemsForMessage(
-	message Message,
-) ([]responses.ResponseInputItemUnionParam, error) {
-	role := strings.ToLower(strings.TrimSpace(message.Role))
-
-	switch role {
-	case "assistant":
-		return openai.assistantItems(message)
-	case "tool":
-		if strings.TrimSpace(message.ToolCallID) == "" {
-			return nil, errnie.Err(
-				errnie.Validation,
-				"provider: tool message requires tool call id",
-				nil,
-			)
-		}
-
-		return []responses.ResponseInputItemUnionParam{
-			responses.ResponseInputItemParamOfFunctionCallOutput(
-				message.ToolCallID,
-				message.Content,
-			),
-		}, nil
-	case "system":
-		return []responses.ResponseInputItemUnionParam{
-			responses.ResponseInputItemParamOfMessage(
-				message.Content,
-				responses.EasyInputMessageRoleSystem,
-			),
-		}, nil
-	case "user", "":
-		return []responses.ResponseInputItemUnionParam{
-			responses.ResponseInputItemParamOfMessage(
-				message.Content,
-				responses.EasyInputMessageRoleUser,
-			),
-		}, nil
-	default:
-		return nil, errnie.Err(
-			errnie.Validation,
-			fmt.Sprintf("provider: unsupported message role %q", message.Role),
-			nil,
-		)
-	}
-}
-
-func (openai *OpenAI) assistantItems(
-	message Message,
-) ([]responses.ResponseInputItemUnionParam, error) {
-	items := make(
-		[]responses.ResponseInputItemUnionParam,
-		len(message.ToolCalls)+1,
-	)
-
-	for _, toolCall := range message.ToolCalls {
-		items = append(
-			items,
-			responses.ResponseInputItemParamOfFunctionCall(
-				toolCall.Arguments,
-				toolCall.ID,
-				toolCall.Name,
-			),
-		)
-	}
-
-	if strings.TrimSpace(message.Content) != "" {
-		items = append(items, responses.ResponseInputItemParamOfMessage(
-			message.Content,
-			responses.EasyInputMessageRoleAssistant,
-		))
-	}
-
-	if len(items) == 0 {
-		return nil, errnie.Err(
-			errnie.Validation,
-			"provider response assistant items requires content or tool calls",
-			nil,
-		)
-	}
-
-	return items, nil
-}
-
-func (openai *OpenAI) textConfig(structured StructuredOutput) responses.ResponseTextConfigParam {
-	format := responses.ResponseFormatTextConfigParamOfJSONSchema(
-		structured.Name,
-		structured.Schema,
-	)
-
-	schema := jsonSchemaParam(structured)
-
-	if schema.Strict.Valid() && format.OfJSONSchema != nil {
-		format.OfJSONSchema.Strict = schema.Strict
-	}
-
-	if schema.Description.Valid() && format.OfJSONSchema != nil {
-		format.OfJSONSchema.Description = schema.Description
-	}
-
-	return responses.ResponseTextConfigParam{
-		Format: format,
-	}
 }

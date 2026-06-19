@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/theapemachine/datura"
 	"github.com/theapemachine/qpool"
 )
 
@@ -12,12 +13,12 @@ func waitBroadcastConsumer(
 	ctx context.Context,
 	consumer *qpool.BroadcastConsumer,
 	timeout time.Duration,
-) (*qpool.QValue[any], error) {
+) (*datura.Artifact, error) {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		if qv := consumer.Poll(); qv != nil {
-			return qv, nil
+		if artifact := consumer.Poll(); artifact != nil {
+			return artifact, nil
 		}
 
 		select {
@@ -34,12 +35,12 @@ func waitParticipant(
 	ctx context.Context,
 	participant *Participant,
 	timeout time.Duration,
-) (*qpool.QValue[any], error) {
+) (*datura.Artifact, error) {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		if qv := participant.Poll(); qv != nil {
-			return qv, nil
+		if artifact := participant.Poll(); artifact != nil {
+			return artifact, nil
 		}
 
 		select {

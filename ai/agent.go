@@ -6,8 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
+	"github.com/theapemachine/animal/a2a"
 	"github.com/theapemachine/animal/ai/provider"
+	"github.com/theapemachine/animal/storage"
 	"github.com/theapemachine/animal/swarm"
+	"github.com/theapemachine/datura"
 	"github.com/theapemachine/errnie"
 	"github.com/theapemachine/qpool"
 )
@@ -28,6 +31,9 @@ type Agent struct {
 	Tools         []Tool
 	Memory        []Memory
 	Context       provider.Context
+	registry      *swarm.Registry
+	claimPrefixes []string
+	training      TrainingSink
 	participant   *swarm.Participant
 	coopBroadcast *qpool.BroadcastGroup
 	coopChannel   *qpool.BroadcastConsumer
@@ -53,29 +59,33 @@ func NewAgent(
 	system = strings.ReplaceAll(system, "{{ agent.guidelines }}", personaLinesFromViper(role, "guidelines"))
 
 	agent := &Agent{
-		ctx:     ctx,
-		cancel:  cancel,
-		pool:    pool,
-		ID:      uuid.New().String(),
-		Name:    name,
-		Role:    role,
-		System:  strings.TrimSpace(system),
-		Tools:   make([]Tool, 0),
-		Memory:  make([]Memory, 0),
-		Context: *provider.NewContext(ctx),
+		ctx:           ctx,
+		cancel:        cancel,
+		pool:          pool,
+		ID:            uuid.New().String(),
+		Name:          name,
+		Role:          role,
+		System:        strings.TrimSpace(system),
+		Tools:         make([]Tool, 0),
+		Memory:        make([]Memory, 0),
+		Context:       *provider.NewContext(ctx),
+		registry:      registry,
+		claimPrefixes: append([]string(nil), claimPrefixes...),
 	}
 
 	if registry != nil {
-		participant, participantErr := registry.NewParticipant(agent.ID, name, role, claimPrefixes)
+		participant, err := registry.NewParticipant(agent.ID, name, role, claimPrefixes)
 
-		if participantErr != nil {
-			return nil, participantErr
+		if err != nil {
+			return nil, err
 		}
 
 		agent.participant = participant
-	} else {
-		agent.coopBroadcast = pool.CreateBroadcastGroup("coop", 64)
-		agent.coopChannel = agent.coopBroadcast.Subscribe(agent.ID, 64)
+	}
+
+	if registry == nil {
+		agent.coopBroadcast = pool.CreateBroadcastGroup("coop")
+		agent.coopChannel = agent.coopBroadcast.Acquire(agent.ID, nil)
 	}
 
 	return agent, errnie.Require(map[string]any{
@@ -92,6 +102,168 @@ func NewAgent(
 	})
 }
 
+/*
+Clone creates a new agent from the current context and appends one sub-task message.
+*/
+func (agent *Agent) Clone(ctx context.Context, subTask string) (*Agent, error) {
+	subTask = strings.TrimSpace(subTask)
+
+	if subTask == "" {
+		return nil, errnie.Err(errnie.Validation, "agent clone sub-task is required", nil)
+	}
+
+	return agent.CloneWithMessage(ctx, provider.Message{
+		Role:    "user",
+		Content: subTask,
+	})
+}
+
+/*
+CloneWithTask creates a clone from an A2A task instruction.
+*/
+func (agent *Agent) CloneWithTask(ctx context.Context, task a2a.Task) (*Agent, error) {
+	if err := task.Validate(); err != nil {
+		return nil, err
+	}
+
+	instruction := strings.TrimSpace(task.Instruction())
+
+	if instruction == "" {
+		return nil, errnie.Err(errnie.Validation, "agent clone task instruction is required", nil)
+	}
+
+	return agent.Clone(ctx, instruction)
+}
+
+/*
+CloneWithMessage creates a clone and appends one provider message.
+*/
+func (agent *Agent) CloneWithMessage(
+	ctx context.Context,
+	message provider.Message,
+) (*Agent, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	agentCtx, err := agent.Context.Clone(ctx)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	if err := agentCtx.Append(message); err != nil {
+		cancel()
+		return nil, err
+	}
+
+	clone := &Agent{
+		ctx:           ctx,
+		cancel:        cancel,
+		pool:          agent.pool,
+		ID:            uuid.New().String(),
+		Name:          agent.Name,
+		Role:          agent.Role,
+		System:        agent.System,
+		Tools:         append(make([]Tool, 0, len(agent.Tools)), agent.Tools...),
+		Memory:        append(make([]Memory, 0, len(agent.Memory)), agent.Memory...),
+		Context:       *agentCtx,
+		registry:      agent.registry,
+		claimPrefixes: append([]string(nil), agent.claimPrefixes...),
+		training:      agent.training,
+	}
+
+	if clone.registry != nil {
+		participant, err := clone.registry.NewParticipant(
+			clone.ID,
+			clone.Name,
+			clone.Role,
+			clone.claimPrefixes,
+		)
+
+		if err != nil {
+			clone.cancel()
+			return nil, err
+		}
+
+		clone.participant = participant
+	}
+
+	if clone.registry == nil {
+		clone.coopBroadcast = clone.pool.CreateBroadcastGroup("coop")
+		clone.coopChannel = clone.coopBroadcast.Acquire(clone.ID, nil)
+	}
+
+	return clone, errnie.Require(map[string]any{
+		"ctx":     clone.ctx,
+		"cancel":  clone.cancel,
+		"pool":    clone.pool,
+		"ID":      clone.ID,
+		"Name":    clone.Name,
+		"Role":    clone.Role,
+		"System":  clone.System,
+		"Tools":   clone.Tools,
+		"Memory":  clone.Memory,
+		"Context": clone.Context,
+	})
+}
+
+/*
+SwapContext hot-swaps an agent onto a different message history.
+*/
+func (agent *Agent) SwapContext(agentCtx *provider.Context) error {
+	clone, err := agentCtx.Clone(agent.ctx)
+
+	if err != nil {
+		return err
+	}
+
+	agent.Context = *clone
+
+	return nil
+}
+
+/*
+UseTrainingRecorder attaches automatic fine-tuning trace collection to the agent.
+*/
+func (agent *Agent) UseTrainingRecorder(trainingRecorder *TrainingRecorder) error {
+	if trainingRecorder == nil {
+		return errnie.Err(errnie.Validation, "training recorder is required", nil)
+	}
+
+	return agent.UseTrainingSink(trainingRecorder)
+}
+
+/*
+UseTrainingStore opens configured artifact-backed training capture and attaches it to the agent.
+*/
+func (agent *Agent) UseTrainingStore(
+	ctx context.Context,
+	config storage.Config,
+) (*TrainingStore, error) {
+	trainingStore, err := NewTrainingStoreFromConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := agent.UseTrainingSink(trainingStore); err != nil {
+		return nil, err
+	}
+
+	return trainingStore, nil
+}
+
+/*
+UseTrainingSink attaches automatic fine-tuning trace collection to the agent.
+*/
+func (agent *Agent) UseTrainingSink(trainingSink TrainingSink) error {
+	if trainingSink == nil {
+		return errnie.Err(errnie.Validation, "training sink is required", nil)
+	}
+
+	agent.training = trainingSink
+
+	return nil
+}
+
 func (agent *Agent) Cycle() {
 	for {
 		select {
@@ -100,15 +272,15 @@ func (agent *Agent) Cycle() {
 		default:
 		}
 
-		qv := agent.pollIncoming()
-		if qv != nil {
-			agent.handleIncoming(qv)
+		artifact := agent.pollIncoming()
+		if artifact != nil {
+			agent.handleIncoming(artifact)
 			continue
 		}
 
 		if agent.participant != nil {
-			if drainErr := agent.participant.Drain(); drainErr != nil {
-				errnie.Warn("swarm drain failed", "err", drainErr)
+			if err := agent.participant.Drain(); err != nil {
+				errnie.Warn("swarm drain failed", "err", err)
 				return
 			}
 		}
@@ -117,7 +289,7 @@ func (agent *Agent) Cycle() {
 	}
 }
 
-func (agent *Agent) pollIncoming() *qpool.QValue[any] {
+func (agent *Agent) pollIncoming() *datura.Artifact {
 	if agent.participant != nil {
 		return agent.participant.Poll()
 	}
@@ -129,21 +301,55 @@ func (agent *Agent) pollIncoming() *qpool.QValue[any] {
 	return agent.coopChannel.Poll()
 }
 
-func (agent *Agent) handleIncoming(qv *qpool.QValue[any]) {
-	switch payload := qv.Value.(type) {
-	case swarm.Rumor:
+func (agent *Agent) handleIncoming(artifact *datura.Artifact) {
+	if artifact == nil {
+		return
+	}
+
+	switch qpool.BusMessageType(artifact) {
+	case swarm.MessageTypeRumor,
+		swarm.MessageTypeTask,
+		swarm.MessageTypeTaskStatus,
+		swarm.MessageTypeSignal,
+		swarm.MessageTypeMetric:
 		if agent.participant == nil {
-			errnie.Warn("agent received swarm rumor without participant")
+			errnie.Warn("agent received swarm artifact without participant")
 			return
 		}
 
-		if receiveErr := agent.participant.Receive(payload); receiveErr != nil {
-			errnie.Warn("swarm receive failed", "err", receiveErr)
+		if err := agent.participant.ReceiveArtifact(artifact); err != nil {
+			errnie.Warn("swarm receive failed", "err", err)
+			return
 		}
-	case provider.Message:
-		agent.Context.Messages = append(agent.Context.Messages, payload)
+
+		if qpool.BusMessageType(artifact) == swarm.MessageTypeMetric {
+			agent.recordMetric(artifact)
+		}
 	default:
-		errnie.Warn("agent channel received invalid payload type", "type", qv.Value)
+		payload := datura.As[provider.Message](artifact)
+
+		if payload.Role == "" && payload.Content == "" {
+			errnie.Warn("agent channel received invalid payload type", "type", qpool.BusMessageType(artifact))
+			return
+		}
+
+		agent.Context.Messages = append(agent.Context.Messages, payload)
+	}
+}
+
+func (agent *Agent) recordMetric(artifact *datura.Artifact) {
+	if agent.training == nil {
+		return
+	}
+
+	metric := datura.As[swarm.Metric](artifact)
+
+	if metric.ActorID != agent.ID || !metric.Success {
+		return
+	}
+
+	if err := agent.training.Record(agent, metric); err != nil {
+		errnie.Warn("agent training record failed", "err", err)
 	}
 }
 

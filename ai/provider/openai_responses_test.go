@@ -70,3 +70,55 @@ func TestParamsValidate(t *testing.T) {
 		})
 	})
 }
+
+/*
+TestParamsClone verifies generation params can be copied before one-off overrides.
+*/
+func TestParamsClone(t *testing.T) {
+	Convey("Given params with pointer fields", t, func() {
+		params := NewParams().
+			WithTemperature(0.4).
+			WithTopP(0.8).
+			WithMaxOutputTokens(128).
+			WithParallelToolCalls(true).
+			WithStructuredOutput(&StructuredOutput{
+				Name: "example",
+				Schema: map[string]any{
+					"type": "object",
+				},
+			})
+
+		Convey("When Clone is called", func() {
+			clone := params.Clone()
+			clone.WithTemperature(0)
+
+			Convey("Then overrides should not mutate the original params", func() {
+				So(clone, ShouldNotEqual, params)
+				So(*params.Temperature, ShouldEqual, 0.4)
+				So(*clone.Temperature, ShouldEqual, 0)
+				So(*params.TopP, ShouldEqual, 0.8)
+				So(*clone.TopP, ShouldEqual, 0.8)
+				So(params.StructuredOutput.Name, ShouldEqual, "example")
+				So(clone.StructuredOutput.Name, ShouldEqual, "example")
+			})
+		})
+	})
+}
+
+func BenchmarkParamsClone(benchmark *testing.B) {
+	params := NewParams().
+		WithTemperature(0.4).
+		WithTopP(0.8).
+		WithMaxOutputTokens(128).
+		WithParallelToolCalls(true).
+		WithStructuredOutput(&StructuredOutput{
+			Name: "example",
+			Schema: map[string]any{
+				"type": "object",
+			},
+		})
+
+	for benchmark.Loop() {
+		_ = params.Clone()
+	}
+}

@@ -21,6 +21,9 @@ import (
 
 func configureAgentTestViper() {
 	viper.Set("ai.prompt.template.system", "You are {{ agent.name }}, a {{ agent.role }}.")
+	viper.Set("ai.prompt.template.observation", "You are {{ agent.name }}, the observation process for {{ project.name }}.")
+	viper.Set("ai.prompt.template.memory_recall", "You are {{ agent.name }}, the memory recall process.")
+	viper.Set("ai.prompt.template.memory_consolidation", "You are {{ agent.name }}, the memory consolidation process.")
 	viper.Set("project.name", "Animal")
 	viper.Set("project.description", "Multi-agent coordination harness.")
 }

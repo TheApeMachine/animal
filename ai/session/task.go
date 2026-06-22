@@ -2,8 +2,11 @@ package session
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/theapemachine/animal/a2a"
+	"github.com/theapemachine/animal/ai"
+	"github.com/theapemachine/animal/ai/provider"
 	"github.com/theapemachine/animal/swarm"
 	"github.com/theapemachine/errnie"
 )
@@ -12,6 +15,8 @@ const (
 	metadataGoalID      = "goal_id"
 	metadataLeasePrefix = "lease_prefix"
 )
+
+var observationStructuredOutput = ai.ObservationStructuredOutput(true)
 
 /*
 RunTask clones the agent for an A2A task and executes one interactive cycle.
@@ -43,6 +48,18 @@ func (session *Session) RunTask(task a2a.Task) (Result, error) {
 	result, err := session.cloneForTask(task)
 	if err != nil {
 		return session.failTask(participant, task, err)
+	}
+
+	if err := session.observeTask(participant, task, result); err != nil {
+		if reportErr := participant.ReportSignal(
+			swarm.SignalFriction,
+			taskGoalID(task),
+			task.ID,
+			"observation pass failed",
+			err.Error(),
+		); reportErr != nil {
+			return result, reportErr
+		}
 	}
 
 	if err := participant.CompleteTask(task.ID, result.Assistant.Content); err != nil {
@@ -82,6 +99,68 @@ func (session *Session) cloneForTask(task a2a.Task) (Result, error) {
 	}
 
 	return taskSession.Cycle()
+}
+
+func (session *Session) observeTask(
+	participant *swarm.Participant,
+	task a2a.Task,
+	result Result,
+) error {
+	system, agentCtx, err := session.agent.ObservationContext(
+		session.ctx,
+		session.observationRequest(participant, task, result),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	params := session.params.Clone().
+		WithStructuredOutput(&observationStructuredOutput)
+	params.WithTemperature(0)
+
+	var builder strings.Builder
+
+	err = session.streamer.StreamWithSink(
+		system,
+		agentCtx,
+		params,
+		func(delta string) error {
+			builder.WriteString(delta)
+
+			return nil
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	observation, err := ai.ParseObservation(builder.String())
+	if err != nil {
+		return err
+	}
+
+	return session.agent.PublishObservation(observation)
+}
+
+func (session *Session) observationRequest(
+	participant *swarm.Participant,
+	task a2a.Task,
+	result Result,
+) ai.ObservationRequest {
+	messages := append([]provider.Message(nil), session.agent.Context.Messages...)
+	messages = append(messages, result.Prompt, result.Assistant)
+
+	return ai.ObservationRequest{
+		GoalID:        taskGoalID(task),
+		TaskID:        task.ID,
+		Instruction:   task.Instruction(),
+		Prompt:        result.Prompt,
+		Assistant:     result.Assistant,
+		RecentSignals: participant.View().RecentSignals(),
+		Messages:      messages,
+	}
 }
 
 func (session *Session) claimTaskLease(

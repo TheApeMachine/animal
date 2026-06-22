@@ -110,7 +110,13 @@ func (session *Session) Cycle() (Result, error) {
 		return result, err
 	}
 
-	assistant, err := session.streamAssistant()
+	agentCtx, packet, err := session.contextWithMemory(prompt)
+	if err != nil {
+		result.EndedAt = time.Now().UTC()
+		return result, err
+	}
+
+	assistant, err := session.streamAssistant(agentCtx)
 	result.Assistant = assistant
 	result.EndedAt = time.Now().UTC()
 
@@ -124,15 +130,21 @@ func (session *Session) Cycle() (Result, error) {
 
 	result.Status = StatusCompleted
 
+	if err := session.consolidateMemory(result, packet); err != nil {
+		return result, err
+	}
+
 	return result, nil
 }
 
-func (session *Session) streamAssistant() (provider.Message, error) {
+func (session *Session) streamAssistant(
+	agentCtx *provider.Context,
+) (provider.Message, error) {
 	var builder strings.Builder
 
 	err := session.streamer.StreamWithSink(
 		session.agent.System,
-		&session.agent.Context,
+		agentCtx,
 		session.params,
 		func(delta string) error {
 			builder.WriteString(delta)

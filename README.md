@@ -13,6 +13,14 @@
 - `a2a` defines protocol-compatible task, message, part, artifact, streaming event, and agent-card data models.
 - `lease` and `ownership` provide exclusive prefix coordination for shared workspaces.
 
+## Memory
+
+Agent memory is a datura-backed runtime surface. Before a generation, the session runs a strict structured recall pass, searches memory, and injects the compact `MemoryPacket` into a temporary model context. After the assistant response, a strict consolidation pass extracts durable records and optional graph relationships back into memory. The agent's primary context remains task-focused and is not polluted by retrieved memory text.
+
+`ai.NewLocalMemory` uses DMT cognitive memory for local runs and tests: records are stored in the radix forest, text is committed through episodic buffers, REM consolidation trains sensory paths, and recall uses sensory beam search plus structural analogs. `ai.NewDaturaMemoryWithGraph` still accepts separate document/vector and graph stores so non-DMT backends can be composed explicitly; relationships without a graph store fail validation.
+
+`ai.NewProjectedMemory` can wrap any memory backend with a projection layer. `ai.NewManifoldProjector` uses nomagique's Metal-backed resonance manifold to project memory text into latent embeddings and expose energy/surprise signals before consolidation reaches storage.
+
 ## Storage
 
 Artifact-backed training capture can be opened through `storage.Config`, `ai.NewTrainingStoreFromConfig`, or `agent.UseTrainingStore`.

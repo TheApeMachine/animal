@@ -56,7 +56,10 @@ PromptTemplateYAML stores the default system prompt skeleton interpolated per ag
 Placeholders such as {{ agent.role }} are replaced at agent construction time from viper config.
 */
 type PromptTemplateYAML struct {
-	System string `yaml:"system,omitempty"`
+	System              string `yaml:"system,omitempty"`
+	Observation         string `yaml:"observation,omitempty"`
+	MemoryRecall        string `yaml:"memory_recall,omitempty"`
+	MemoryConsolidation string `yaml:"memory_consolidation,omitempty"`
 }
 
 /*

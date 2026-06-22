@@ -70,7 +70,10 @@ func TestRunTask(t *testing.T) {
 		session, err := NewSession(
 			ctx,
 			agent,
-			&fakeStreamer{deltas: []string{"make test\n"}},
+			&fakeStreamer{responses: [][]string{
+				{"make test\n"},
+				{`{"signals":[]}`},
+			}},
 			bridge,
 			provider.NewParams(),
 		)
@@ -136,6 +139,91 @@ func TestRunTaskLeaseBlocker(t *testing.T) {
 	})
 }
 
+func TestRunTaskObservationSignal(t *testing.T) {
+	Convey("Given a task response with an observation signal", t, func() {
+		configureSessionTestViper()
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		registry, err := testRegistry(ctx, pool)
+		So(err, ShouldBeNil)
+
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", registry, []string{"lanes/a/"})
+		So(err, ShouldBeNil)
+
+		terminal := newFakeTerminal("shell ready\n")
+		bridge, err := alcatraztool.NewBridge(ctx, terminal)
+		So(err, ShouldBeNil)
+
+		observation := `{"signals":[{"kind":"quality","goal_id":"goal-1","task_id":"","summary":"coverage gap","detail":"The response mentions tests but no coverage evidence."}]}`
+		session, err := NewSession(
+			ctx,
+			agent,
+			&fakeStreamer{responses: [][]string{
+				{"make test\n"},
+				{observation},
+			}},
+			bridge,
+			provider.NewParams(),
+		)
+		So(err, ShouldBeNil)
+
+		Convey("When RunTask is called", func() {
+			result, runErr := session.RunTask(testTask())
+
+			Convey("Then the observation should publish a swarm signal", func() {
+				signals := agent.Participant().View().RecentSignals()
+				So(runErr, ShouldBeNil)
+				So(result.Status, ShouldEqual, StatusCompleted)
+				So(signals, ShouldHaveLength, 1)
+				So(signals[0].Kind, ShouldEqual, swarm.SignalQuality)
+				So(signals[0].Summary, ShouldEqual, "coverage gap")
+			})
+		})
+	})
+}
+
+func TestRunTaskObservationFailure(t *testing.T) {
+	Convey("Given an invalid observation response", t, func() {
+		configureSessionTestViper()
+		ctx := context.Background()
+		pool := qpool.NewQ[any](ctx, 1, 1, &qpool.Config{Scaler: nil})
+
+		registry, err := testRegistry(ctx, pool)
+		So(err, ShouldBeNil)
+
+		agent, err := ai.NewAgent(ctx, pool, "developer", "Ada", registry, []string{"lanes/a/"})
+		So(err, ShouldBeNil)
+
+		bridge, err := alcatraztool.NewBridge(ctx, newFakeTerminal("shell ready\n"))
+		So(err, ShouldBeNil)
+
+		session, err := NewSession(
+			ctx,
+			agent,
+			&fakeStreamer{responses: [][]string{
+				{"make test\n"},
+				{"not json"},
+			}},
+			bridge,
+			provider.NewParams(),
+		)
+		So(err, ShouldBeNil)
+
+		Convey("When RunTask is called", func() {
+			result, runErr := session.RunTask(testTask())
+
+			Convey("Then the task should complete and report observation friction", func() {
+				signals := agent.Participant().View().SignalsByKind(swarm.SignalFriction)
+				So(runErr, ShouldBeNil)
+				So(result.Status, ShouldEqual, StatusCompleted)
+				So(signals, ShouldHaveLength, 1)
+				So(signals[0].Summary, ShouldEqual, "observation pass failed")
+			})
+		})
+	})
+}
+
 func BenchmarkRunTask(benchmark *testing.B) {
 	configureSessionTestViper()
 	ctx := context.Background()
@@ -160,7 +248,10 @@ func BenchmarkRunTask(benchmark *testing.B) {
 		session, err := NewSession(
 			ctx,
 			agent,
-			&fakeStreamer{deltas: []string{"make test\n"}},
+			&fakeStreamer{responses: [][]string{
+				{"make test\n"},
+				{`{"signals":[]}`},
+			}},
 			bridge,
 			provider.NewParams(),
 		)

@@ -12,6 +12,7 @@ require (
 	github.com/theapemachine/alcatraz v0.0.0
 	github.com/theapemachine/animal v0.0.0
 	github.com/theapemachine/errnie v1.2.5
+	github.com/theapemachine/nomagique v0.0.0
 	github.com/theapemachine/qpool v1.2.5
 )
 
@@ -152,5 +153,7 @@ require (
 )
 
 replace github.com/bytedance/sonic => ../../../sonic
+
+replace github.com/theapemachine/nomagique => ../../../nomagique
 
 replace github.com/theapemachine/qpool => ../../../qpool

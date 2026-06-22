@@ -31,8 +31,13 @@ func (terminal *fakeTerminal) Write(payload []byte) (int, error) {
 }
 
 type fakeStreamer struct {
-	deltas []string
-	err    error
+	deltas    []string
+	responses [][]string
+	calls     int
+	systems   []string
+	contexts  [][]provider.Message
+	schemas   []string
+	err       error
 }
 
 func (streamer *fakeStreamer) StreamWithSink(
@@ -41,7 +46,30 @@ func (streamer *fakeStreamer) StreamWithSink(
 	params *provider.Params,
 	sink func(string) error,
 ) error {
-	for _, delta := range streamer.deltas {
+	streamer.systems = append(streamer.systems, system)
+	streamer.contexts = append(streamer.contexts, append([]provider.Message(nil), agentCtx.Messages...))
+
+	schemaName := ""
+	if params != nil && params.StructuredOutput != nil {
+		schemaName = params.StructuredOutput.Name
+	}
+
+	streamer.schemas = append(streamer.schemas, schemaName)
+
+	deltas := streamer.deltas
+
+	if len(streamer.responses) > 0 {
+		index := streamer.calls
+		streamer.calls++
+
+		if index >= len(streamer.responses) {
+			index = len(streamer.responses) - 1
+		}
+
+		deltas = streamer.responses[index]
+	}
+
+	for _, delta := range deltas {
 		if err := sink(delta); err != nil {
 			return err
 		}
@@ -52,6 +80,9 @@ func (streamer *fakeStreamer) StreamWithSink(
 
 func configureSessionTestViper() {
 	viper.Set("ai.prompt.template.system", "You are {{ agent.name }}, a {{ agent.role }}.")
+	viper.Set("ai.prompt.template.observation", "You are {{ agent.name }}, the observation process.")
+	viper.Set("ai.prompt.template.memory_recall", "You are {{ agent.name }}, the memory recall process.")
+	viper.Set("ai.prompt.template.memory_consolidation", "You are {{ agent.name }}, the memory consolidation process.")
 	viper.Set("project.name", "Animal")
 	viper.Set("project.description", "Multi-agent coordination harness.")
 }

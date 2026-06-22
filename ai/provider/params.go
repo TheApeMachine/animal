@@ -90,6 +90,45 @@ func (params *Params) WithReasoningEffort(reasoningEffort string) *Params {
 	return params
 }
 
+/*
+Clone copies Params so one generation can override structured output or sampling without mutating defaults.
+*/
+func (params *Params) Clone() *Params {
+	if params == nil {
+		return NewParams()
+	}
+
+	clone := *params
+	clone.Messages = append([]Message(nil), params.Messages...)
+
+	if params.Temperature != nil {
+		temperature := *params.Temperature
+		clone.Temperature = &temperature
+	}
+
+	if params.TopP != nil {
+		topP := *params.TopP
+		clone.TopP = &topP
+	}
+
+	if params.MaxOutputTokens != nil {
+		maxOutputTokens := *params.MaxOutputTokens
+		clone.MaxOutputTokens = &maxOutputTokens
+	}
+
+	if params.ParallelToolCalls != nil {
+		parallelToolCalls := *params.ParallelToolCalls
+		clone.ParallelToolCalls = &parallelToolCalls
+	}
+
+	if params.StructuredOutput != nil {
+		structuredOutput := *params.StructuredOutput
+		clone.StructuredOutput = &structuredOutput
+	}
+
+	return &clone
+}
+
 func (params *Params) Validate() error {
 	if params.Temperature != nil && (*params.Temperature < 0 || *params.Temperature > 2) {
 		return fmt.Errorf("provider: temperature must be between 0 and 2")

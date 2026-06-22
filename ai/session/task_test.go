@@ -79,19 +79,17 @@ func TestRunTask(t *testing.T) {
 		)
 		So(err, ShouldBeNil)
 
-		Convey("When RunTask is called", func() {
-			result, runErr := session.RunTask(testTask())
+		Convey("It should complete the task and emit a success metric", func() {
+			result, err := session.RunTask(testTask())
 
-			Convey("Then the task should complete and emit a success metric", func() {
-				task, ok := agent.Participant().View().Task("task-1")
-				So(runErr, ShouldBeNil)
-				So(result.Status, ShouldEqual, StatusCompleted)
-				So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
-				So(ok, ShouldBeTrue)
-				So(task.Status.State, ShouldEqual, a2a.TaskStateCompleted)
-				So(len(agent.Participant().View().RecentMetrics()), ShouldEqual, 1)
-				So(agent.Participant().View().RecentMetrics()[0].Name, ShouldEqual, "task_completed")
-			})
+			task, ok := agent.Participant().View().Task("task-1")
+			So(err, ShouldBeNil)
+			So(result.Status, ShouldEqual, StatusCompleted)
+			So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
+			So(ok, ShouldBeTrue)
+			So(task.Status.State, ShouldEqual, a2a.TaskStateCompleted)
+			So(len(agent.Participant().View().RecentMetrics()), ShouldEqual, 1)
+			So(agent.Participant().View().RecentMetrics()[0].Name, ShouldEqual, "task_completed")
 		})
 	})
 }
@@ -124,17 +122,15 @@ func TestRunTaskLeaseBlocker(t *testing.T) {
 		)
 		So(err, ShouldBeNil)
 
-		Convey("When RunTask is called", func() {
-			result, runErr := session.RunTask(testTask())
+		Convey("It should fail the task and report a blocker", func() {
+			result, err := session.RunTask(testTask())
 
-			Convey("Then the task should fail and report a blocker", func() {
-				task, ok := agent.Participant().View().Task("task-1")
-				So(runErr, ShouldNotBeNil)
-				So(result.Status, ShouldEqual, StatusFailed)
-				So(ok, ShouldBeTrue)
-				So(task.Status.State, ShouldEqual, a2a.TaskStateFailed)
-				So(len(agent.Participant().View().BlockingSignals()), ShouldEqual, 1)
-			})
+			task, ok := agent.Participant().View().Task("task-1")
+			So(err, ShouldNotBeNil)
+			So(result.Status, ShouldEqual, StatusFailed)
+			So(ok, ShouldBeTrue)
+			So(task.Status.State, ShouldEqual, a2a.TaskStateFailed)
+			So(len(agent.Participant().View().BlockingSignals()), ShouldEqual, 1)
 		})
 	})
 }

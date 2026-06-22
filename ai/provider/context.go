@@ -47,6 +47,7 @@ func (agentCtx *Context) Clone(ctx context.Context) (*Context, error) {
 	}
 
 	clone := NewContext(ctx)
+	clone.Messages = make([]Message, 0, len(agentCtx.Messages))
 	clone.Messages = append(clone.Messages, agentCtx.Messages...)
 
 	return clone, nil

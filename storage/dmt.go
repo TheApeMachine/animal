@@ -86,6 +86,7 @@ func (store *DMTStore) Put(
 
 	key := strings.TrimSpace(string(artifact.Prefix()))
 
+	// Reject "." because datura emits it when origin, role, or scope was never set.
 	if key == "" || key == "." {
 		return "", errnie.Err(errnie.Validation, "dmt store artifact prefix is required", nil)
 	}
@@ -215,7 +216,7 @@ func decodeArtifact(payload []byte, storeName string) (*datura.Artifact, error) 
 		return nil, errnie.Err(errnie.Validation, storeName+" artifact allocation failed", nil)
 	}
 
-	if err := artifact.Unpack(payload); err != nil {
+	if _, err := artifact.Unpack(payload); err != nil {
 		return nil, errnie.Err(errnie.Validation, storeName+" artifact unpack failed", err)
 	}
 

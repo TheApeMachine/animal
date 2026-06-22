@@ -247,45 +247,45 @@ func TestClose(t *testing.T) {
 	})
 }
 
-func BenchmarkReadPrompt(benchmark *testing.B) {
+func BenchmarkReadPrompt(b *testing.B) {
 	payload := bytes.Repeat([]byte("x"), 1024)
 
-	for benchmark.Loop() {
+	for b.Loop() {
 		bridge, err := NewBridge(context.Background(), newScriptTerminal(string(payload)))
 		if err != nil {
-			benchmark.Fatal(err)
+			b.Fatal(err)
 		}
 
 		if _, err := bridge.ReadPrompt(); err != nil && err != io.EOF {
-			benchmark.Fatal(err)
+			b.Fatal(err)
 		}
 	}
 }
 
-func BenchmarkWriteOutput(benchmark *testing.B) {
+func BenchmarkWriteOutput(b *testing.B) {
 	terminal := newScriptTerminal("")
 	bridge, err := NewBridge(context.Background(), terminal)
 	if err != nil {
-		benchmark.Fatal(err)
+		b.Fatal(err)
 	}
 
-	for benchmark.Loop() {
+	for b.Loop() {
 		if err := bridge.WriteOutput("go test ./..."); err != nil {
-			benchmark.Fatal(err)
+			b.Fatal(err)
 		}
 	}
 }
 
-func BenchmarkWriteChunk(benchmark *testing.B) {
+func BenchmarkWriteChunk(b *testing.B) {
 	terminal := newScriptTerminal("")
 	bridge, err := NewBridge(context.Background(), terminal)
 	if err != nil {
-		benchmark.Fatal(err)
+		b.Fatal(err)
 	}
 
-	for benchmark.Loop() {
+	for b.Loop() {
 		if err := bridge.WriteChunk("x"); err != nil {
-			benchmark.Fatal(err)
+			b.Fatal(err)
 		}
 	}
 }

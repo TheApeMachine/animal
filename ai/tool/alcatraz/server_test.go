@@ -18,12 +18,10 @@ func TestMCPServer(t *testing.T) {
 		server, err := NewServer(ctx, bridge)
 		So(err, ShouldBeNil)
 
-		Convey("When MCPServer is called", func() {
+		Convey("It should return an MCP server", func() {
 			mcpServer := server.MCPServer()
 
-			Convey("Then it should return a server", func() {
-				So(mcpServer, ShouldNotBeNil)
-			})
+			So(mcpServer, ShouldNotBeNil)
 		})
 	})
 }
@@ -34,13 +32,11 @@ func TestNewServer(t *testing.T) {
 		bridge, err := NewBridge(ctx, newScriptTerminal(""))
 		So(err, ShouldBeNil)
 
-		Convey("When NewServer is called", func() {
-			server, serverErr := NewServer(ctx, bridge)
+		Convey("It should create a server adapter", func() {
+			server, err := NewServer(ctx, bridge)
 
-			Convey("Then it should create a server adapter", func() {
-				So(serverErr, ShouldBeNil)
-				So(server, ShouldNotBeNil)
-			})
+			So(err, ShouldBeNil)
+			So(server, ShouldNotBeNil)
 		})
 	})
 }
@@ -57,8 +53,8 @@ func TestReadTool(t *testing.T) {
 		session, err := mcpclient.ConnectInMemory(ctx, server.MCPServer())
 		So(err, ShouldBeNil)
 
-		Convey("When alcatraz_read is called", func() {
-			payload, callErr := mcpclient.CallToolJSON(
+		Convey("It should return environment output", func() {
+			payload, err := mcpclient.CallToolJSON(
 				ctx,
 				session,
 				"alcatraz_read",
@@ -67,12 +63,10 @@ func TestReadTool(t *testing.T) {
 			var result ReadResult
 			decodeErr := json.Unmarshal(payload, &result)
 
-			Convey("Then it should return environment output", func() {
-				So(callErr, ShouldBeNil)
-				So(decodeErr, ShouldBeNil)
-				So(result.Content, ShouldEqual, "stdout\nstderr\n")
-				So(result.Bytes, ShouldEqual, len("stdout\nstderr\n"))
-			})
+			So(err, ShouldBeNil)
+			So(decodeErr, ShouldBeNil)
+			So(result.Content, ShouldEqual, "stdout\nstderr\n")
+			So(result.Bytes, ShouldEqual, len("stdout\nstderr\n"))
 		})
 	})
 }
@@ -90,8 +84,8 @@ func TestWriteTool(t *testing.T) {
 		session, err := mcpclient.ConnectInMemory(ctx, server.MCPServer())
 		So(err, ShouldBeNil)
 
-		Convey("When alcatraz_write is called", func() {
-			payload, callErr := mcpclient.CallToolJSON(
+		Convey("It should write to environment stdin", func() {
+			payload, err := mcpclient.CallToolJSON(
 				ctx,
 				session,
 				"alcatraz_write",
@@ -100,12 +94,10 @@ func TestWriteTool(t *testing.T) {
 			var result WriteResult
 			decodeErr := json.Unmarshal(payload, &result)
 
-			Convey("Then it should write to environment stdin", func() {
-				So(callErr, ShouldBeNil)
-				So(decodeErr, ShouldBeNil)
-				So(result.Bytes, ShouldEqual, len("make test\n"))
-				So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
-			})
+			So(err, ShouldBeNil)
+			So(decodeErr, ShouldBeNil)
+			So(result.Bytes, ShouldEqual, len("make test\n"))
+			So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
 		})
 	})
 }

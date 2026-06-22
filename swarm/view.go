@@ -84,7 +84,10 @@ func cloneViewSnapshot(snapshot viewSnapshot) viewSnapshot {
 	maps.Copy(statuses, snapshot.statuses)
 
 	tasks := make(map[string]a2a.Task, len(snapshot.tasks))
-	maps.Copy(tasks, snapshot.tasks)
+
+	for taskID, task := range snapshot.tasks {
+		tasks[taskID] = task.Clone()
+	}
 
 	announces := append([]announceRecord(nil), snapshot.announces...)
 	signals := append([]Signal(nil), snapshot.signals...)

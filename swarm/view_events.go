@@ -2,9 +2,11 @@ package swarm
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
 	"github.com/theapemachine/animal/a2a"
+	"github.com/theapemachine/errnie"
 )
 
 /*
@@ -31,6 +33,14 @@ MergeTaskStatus applies an A2A streaming status event into the local view.
 func (view *View) MergeTaskStatus(event a2a.TaskStatusUpdateEvent) error {
 	if err := event.Validate(); err != nil {
 		return err
+	}
+
+	if _, ok := view.Task(event.TaskID); !ok {
+		return errnie.Err(
+			errnie.Validation,
+			fmt.Sprintf("swarm view task %q not found", event.TaskID),
+			nil,
+		)
 	}
 
 	view.state.Update(func(snapshot viewSnapshot) viewSnapshot {

@@ -89,6 +89,10 @@ func (mesh *Mesh) PublishValue(
 		return fmt.Errorf("swarm: message type is required")
 	}
 
+	if senderID == "" {
+		return fmt.Errorf("swarm: sender ID is required")
+	}
+
 	artifact, err := qpool.NewBusArtifact(
 		senderID,
 		senderID,

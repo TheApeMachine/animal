@@ -113,3 +113,132 @@ func TestViewBlockingSignals(t *testing.T) {
 		})
 	})
 }
+
+func BenchmarkViewMergeTask(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	task := a2a.Task{
+		ID: "task-1",
+		Status: a2a.TaskStatus{
+			State: a2a.TaskStateSubmitted,
+		},
+	}
+
+	for b.Loop() {
+		if err := view.MergeTask(task); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkViewMergeTaskStatus(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	task := a2a.Task{
+		ID: "task-1",
+		Status: a2a.TaskStatus{
+			State: a2a.TaskStateSubmitted,
+		},
+	}
+
+	if err := view.MergeTask(task); err != nil {
+		b.Fatal(err)
+	}
+
+	event := a2a.TaskStatusUpdateEvent{
+		TaskID: "task-1",
+		Status: a2a.TaskStatus{
+			State: a2a.TaskStateWorking,
+		},
+	}
+
+	for b.Loop() {
+		if err := view.MergeTaskStatus(event); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkViewMergeSignal(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	signal := NewSignalAt(SignalBlocker, "actor-a", "Ada", "developer", time.Now())
+	signal.Summary = "lease blocked"
+
+	for b.Loop() {
+		if err := view.MergeSignal(signal); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkViewTasks(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	task := a2a.Task{
+		ID: "task-1",
+		Status: a2a.TaskStatus{
+			State: a2a.TaskStateSubmitted,
+		},
+	}
+
+	if err := view.MergeTask(task); err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		_ = view.Tasks()
+	}
+}
+
+func BenchmarkViewSubmittedTasks(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	task := a2a.Task{
+		ID: "task-1",
+		Status: a2a.TaskStatus{
+			State: a2a.TaskStateSubmitted,
+		},
+	}
+
+	if err := view.MergeTask(task); err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		_ = view.SubmittedTasks()
+	}
+}
+
+func BenchmarkViewBlockingSignals(b *testing.B) {
+	view, err := NewView(30 * time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	signal := NewSignalAt(SignalBlocker, "actor-a", "Ada", "developer", time.Now())
+	signal.Summary = "lease blocked"
+
+	if err := view.MergeSignal(signal); err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		_ = view.BlockingSignals()
+	}
+}

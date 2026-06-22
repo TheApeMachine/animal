@@ -125,10 +125,6 @@ func (trainingStore *TrainingStore) RecordExample(
 		WithScope(goalID).
 		WithPayload(payload)
 
-	if artifact == nil {
-		return "", errnie.Err(errnie.Validation, "training artifact payload failed", nil)
-	}
-
 	key, err := trainingStore.key(artifact)
 	if err != nil {
 		return "", err

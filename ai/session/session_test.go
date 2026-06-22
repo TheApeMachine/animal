@@ -99,8 +99,8 @@ func TestNewSession(t *testing.T) {
 		bridge, err := alcatraztool.NewBridge(ctx, newFakeTerminal("ready"))
 		So(err, ShouldBeNil)
 
-		Convey("When NewSession is called", func() {
-			session, sessionErr := NewSession(
+		Convey("It should create a session", func() {
+			session, err := NewSession(
 				ctx,
 				agent,
 				&fakeStreamer{deltas: []string{"pwd\n"}},
@@ -108,10 +108,8 @@ func TestNewSession(t *testing.T) {
 				provider.NewParams(),
 			)
 
-			Convey("Then it should create a session", func() {
-				So(sessionErr, ShouldBeNil)
-				So(session, ShouldNotBeNil)
-			})
+			So(err, ShouldBeNil)
+			So(session, ShouldNotBeNil)
 		})
 	})
 }
@@ -138,19 +136,17 @@ func TestCycle(t *testing.T) {
 		)
 		So(err, ShouldBeNil)
 
-		Convey("When Cycle is called", func() {
-			result, cycleErr := session.Cycle()
+		Convey("It should append prompt input and stream assistant output to stdin", func() {
+			result, err := session.Cycle()
 
-			Convey("Then prompt input is appended and streamed output reaches stdin", func() {
-				So(cycleErr, ShouldBeNil)
-				So(result.Status, ShouldEqual, StatusCompleted)
-				So(result.Prompt.Content, ShouldEqual, "shell ready\n")
-				So(result.Assistant.Content, ShouldEqual, "make test\n")
-				So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
-				So(len(agent.Context.Messages), ShouldEqual, 2)
-				So(agent.Context.Messages[0].Role, ShouldEqual, "user")
-				So(agent.Context.Messages[1].Role, ShouldEqual, "assistant")
-			})
+			So(err, ShouldBeNil)
+			So(result.Status, ShouldEqual, StatusCompleted)
+			So(result.Prompt.Content, ShouldEqual, "shell ready\n")
+			So(result.Assistant.Content, ShouldEqual, "make test\n")
+			So(terminal.writeBuffer.String(), ShouldEqual, "make test\n")
+			So(len(agent.Context.Messages), ShouldEqual, 2)
+			So(agent.Context.Messages[0].Role, ShouldEqual, "user")
+			So(agent.Context.Messages[1].Role, ShouldEqual, "assistant")
 		})
 	})
 }
@@ -176,13 +172,11 @@ func TestClose(t *testing.T) {
 		)
 		So(err, ShouldBeNil)
 
-		Convey("When Close is called", func() {
-			closeErr := session.Close()
+		Convey("It should cancel the session scope", func() {
+			err := session.Close()
 
-			Convey("Then it should cancel the session scope", func() {
-				So(closeErr, ShouldBeNil)
-				So(session.ctx.Err(), ShouldNotBeNil)
-			})
+			So(err, ShouldBeNil)
+			So(session.ctx.Err(), ShouldNotBeNil)
 		})
 	})
 }

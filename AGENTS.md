@@ -76,14 +76,14 @@ NewObjectName instantiates a new ObjectName.
 It also has a reason for being instantiated.
 */
 func NewObjectName(ctx context.Context) (*ObjectName, error) {
-    ctx, cancel := ctx.WithCancel(ctx)
+    ctx, cancel := context.WithCancel(ctx)
 
     obj := &ObjectName{
         ctx:    ctx,
         cancel: cancel,
     }
 
-    return obj, errnie.Require(map[string]any {
+    return obj, errnie.Require(map[string]any{
         "ctx":    obj.ctx,
         "cancel": obj.cancel,
     })
@@ -124,15 +124,15 @@ NewObjectName instantiates a new ObjectName.
 It also has a reason for being instantiated.
 */
 func NewObjectName(ctx context.Context) (*ObjectName, error) {
-    ctx, cancel := ctx.WithCancel(ctx)
+    ctx, cancel := context.WithCancel(ctx)
 
     obj := &ObjectName{
         ctx:      ctx,
         cancel:   cancel,
-        composed: NewComposedObject(ctx)
+        composed: NewComposedObject(ctx),
     }
 
-    return obj, errnie.Require(map[string]any {
+    return obj, errnie.Require(map[string]any{
         "ctx":    obj.ctx,
         "cancel": obj.cancel,
     })
@@ -371,7 +371,7 @@ nomagique.Number(
 )
 ```
 
-2. **Errors** Use `errnie` (example below). The variable for errors is `err` at all times and not anything else.
+1. **Errors** Use `errnie` (example below). The variable for errors is `err` at all times and not anything else.
 
 ```go
 // errnie.Error is logging, errnie.Err is our custom error type.
@@ -382,5 +382,5 @@ errnie.Error(errnie.Err(
 ))
 ```
 
-3. **Tests** Use Goconvey, and mirror the file names and method names, use nested BDD style, test meaningful things and add benchmarks at the bottom. The variable for testing.T is `t` and not `testingTB`
-4. **Complexity** Has to be earned. No "helper" methods with just one line of code, no overly defensive programming, and no abstractions that require many hops to understand. Keep it simple first, then we will see if we want to abstract complexity away afterwards.
+1. **Tests** Use Goconvey, and mirror the file names and method names, use nested BDD style, test meaningful things and add benchmarks at the bottom. The variable for testing.T is `t` and not `testingTB`
+1. **Complexity** Has to be earned. No "helper" methods with just one line of code, no overly defensive programming, and no abstractions that require many hops to understand. Keep it simple first, then we will see if we want to abstract complexity away afterwards.

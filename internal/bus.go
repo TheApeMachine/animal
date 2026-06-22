@@ -113,9 +113,11 @@ func (bus *Bus) Send(
 		)
 	}
 
+	channelName := channel.String()
+
 	artifact, err := qpool.NewBusArtifact(
-		channel.String(),
-		channel.String(),
+		channelName,
+		channelName,
 		messageType,
 		value,
 		viper.GetDuration("system.queue.ttl"),

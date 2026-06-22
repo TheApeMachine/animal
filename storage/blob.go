@@ -139,6 +139,7 @@ func (store *BlobStore) Put(
 
 	key := strings.TrimSpace(string(artifact.Prefix()))
 
+	// Reject "." because datura emits it when origin, role, or scope was never set.
 	if key == "" || key == "." {
 		return "", errnie.Err(errnie.Validation, "blob store artifact prefix is required", nil)
 	}
@@ -200,6 +201,10 @@ func (store *BlobStore) Get(
 
 /*
 List returns artifacts whose keys share the requested prefix.
+
+Each listed key triggers an individual Get call, so latency grows linearly with
+result count. Callers listing large prefix sets should paginate externally or
+prefetch asynchronously.
 */
 func (store *BlobStore) List(
 	ctx context.Context,

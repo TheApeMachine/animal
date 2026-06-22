@@ -56,6 +56,18 @@ func NewTrainingRecorder(ctx context.Context, path string) (*TrainingRecorder, e
 }
 
 /*
+Close cancels the recorder scope.
+*/
+func (trainingRecorder *TrainingRecorder) Close() error {
+	trainingRecorder.cancel()
+
+	return errnie.Require(map[string]any{
+		"ctx":  trainingRecorder.ctx,
+		"path": trainingRecorder.path,
+	})
+}
+
+/*
 Record appends the agent trace when metric marks the outcome successful.
 */
 func (trainingRecorder *TrainingRecorder) Record(

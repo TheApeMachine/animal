@@ -73,19 +73,8 @@ func NewAgent(
 		claimPrefixes: append([]string(nil), claimPrefixes...),
 	}
 
-	if registry != nil {
-		participant, err := registry.NewParticipant(agent.ID, name, role, claimPrefixes)
-
-		if err != nil {
-			return nil, err
-		}
-
-		agent.participant = participant
-	}
-
-	if registry == nil {
-		agent.coopBroadcast = pool.CreateBroadcastGroup("coop")
-		agent.coopChannel = agent.coopBroadcast.Acquire(agent.ID, nil)
+	if err := agent.attachSwarmChannels(agent.ID); err != nil {
+		return nil, err
 	}
 
 	return agent, errnie.Require(map[string]any{
@@ -100,6 +89,30 @@ func NewAgent(
 		"Memory":  agent.Memory,
 		"Context": agent.Context,
 	})
+}
+
+func (agent *Agent) attachSwarmChannels(agentID string) error {
+	if agent.registry != nil {
+		participant, err := agent.registry.NewParticipant(
+			agentID,
+			agent.Name,
+			agent.Role,
+			agent.claimPrefixes,
+		)
+
+		if err != nil {
+			return err
+		}
+
+		agent.participant = participant
+	}
+
+	if agent.registry == nil {
+		agent.coopBroadcast = agent.pool.CreateBroadcastGroup("coop")
+		agent.coopChannel = agent.coopBroadcast.Acquire(agentID, nil)
+	}
+
+	return nil
 }
 
 /*
@@ -171,25 +184,9 @@ func (agent *Agent) CloneWithMessage(
 		training:      agent.training,
 	}
 
-	if clone.registry != nil {
-		participant, err := clone.registry.NewParticipant(
-			clone.ID,
-			clone.Name,
-			clone.Role,
-			clone.claimPrefixes,
-		)
-
-		if err != nil {
-			clone.cancel()
-			return nil, err
-		}
-
-		clone.participant = participant
-	}
-
-	if clone.registry == nil {
-		clone.coopBroadcast = clone.pool.CreateBroadcastGroup("coop")
-		clone.coopChannel = clone.coopBroadcast.Acquire(clone.ID, nil)
+	if err := clone.attachSwarmChannels(clone.ID); err != nil {
+		clone.cancel()
+		return nil, err
 	}
 
 	return clone, errnie.Require(map[string]any{

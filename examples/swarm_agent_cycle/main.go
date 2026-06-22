@@ -102,17 +102,17 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				artifact, waitErr := consumer.Wait(ctx)
+				artifact, err := consumer.Wait(ctx)
 
-				if waitErr != nil {
-					fmt.Fprintf(os.Stderr, "consumer wait: %v\n", waitErr)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "consumer wait: %v\n", err)
 					return
 				}
 
-				chunk, decodeErr := qpool.ArtifactValue[string](artifact)
+				chunk, err := qpool.ArtifactValue[string](artifact)
 
-				if decodeErr != nil {
-					fmt.Fprintf(os.Stderr, "consumer decode: %v\n", decodeErr)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "consumer decode: %v\n", err)
 					continue
 				}
 

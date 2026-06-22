@@ -35,6 +35,10 @@ func (session *Session) RunTask(task a2a.Task) (Result, error) {
 		)
 	}
 
+	if err := participant.View().MergeTask(task); err != nil {
+		return Result{Status: StatusFailed}, err
+	}
+
 	if err := session.claimTaskLease(participant, task); err != nil {
 		return session.failTask(participant, task, err)
 	}

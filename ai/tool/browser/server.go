@@ -141,9 +141,9 @@ func withSession[T any](
 		return nil, zero, err
 	}
 
-	typed, valueErr := qpool.ArtifactValue[T](result)
-	if valueErr != nil {
-		return nil, zero, valueErr
+	typed, err := qpool.ArtifactValue[T](result)
+	if err != nil {
+		return nil, zero, err
 	}
 
 	return nil, typed, nil

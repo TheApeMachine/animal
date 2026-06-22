@@ -142,6 +142,13 @@ func run(ctx context.Context) error {
 	}
 	defer session.Close()
 
+	return runSessionCycle(session, bridge)
+}
+
+func runSessionCycle(
+	session *animalsession.Session,
+	bridge *alcatraztool.Bridge,
+) error {
 	result, err := session.Cycle()
 	if err != nil {
 		return err

@@ -78,12 +78,16 @@ func (participant *Participant) ReceiveArtifact(artifact *datura.Artifact) error
 		return participant.view.Merge(datura.As[Rumor](artifact))
 	case MessageTypeTask:
 		return participant.view.MergeTask(datura.As[a2a.Task](artifact))
+	case MessageTypeTaskClaim:
+		return participant.view.MergeTaskClaim(datura.As[TaskClaim](artifact))
 	case MessageTypeTaskStatus:
 		return participant.view.MergeTaskStatus(datura.As[a2a.TaskStatusUpdateEvent](artifact))
 	case MessageTypeSignal:
 		return participant.view.MergeSignal(datura.As[Signal](artifact))
 	case MessageTypeMetric:
 		return participant.view.MergeMetric(datura.As[Metric](artifact))
+	case MessageTypeContention:
+		return participant.view.MergeContention(datura.As[Contention](artifact))
 	default:
 		return errnie.Err(
 			errnie.Validation,
@@ -137,9 +141,24 @@ TryClaim acquires a filesystem lease then publishes a gossip claim.
 */
 func (participant *Participant) TryClaim(prefix string) error {
 	if err := participant.coordinator.AcquireID(prefix, participant.actorID); err != nil {
+		return participant.contentionError(prefix, err)
+	}
+
+	return participant.publishClaim(prefix)
+}
+
+/*
+Renew touches a held lease and republishes its claim rumor.
+*/
+func (participant *Participant) Renew(prefix string) error {
+	if err := participant.coordinator.TouchID(prefix, participant.actorID); err != nil {
 		return err
 	}
 
+	return participant.publishClaim(prefix)
+}
+
+func (participant *Participant) publishClaim(prefix string) error {
 	rumor := NewRumorAt(
 		KindClaim,
 		participant.actorID,
@@ -204,32 +223,4 @@ func (participant *Participant) PublishStatus(state string) error {
 	}
 
 	return participant.mesh.Publish(participant.actorID, rumor)
-}
-
-/*
-TryClaimConfigured attempts claims on configured prefixes that gossip shows as free.
-*/
-func (participant *Participant) TryClaimConfigured() (string, error) {
-	participant.view.PurgeExpired(time.Now())
-
-	for _, prefix := range participant.claimPrefixes {
-		if !participant.view.IsPrefixFree(prefix) {
-			continue
-		}
-
-		if err := participant.TryClaim(prefix); err != nil {
-			continue
-		}
-
-		return prefix, nil
-	}
-
-	return "", errnie.Error(errnie.Err(
-		errnie.NotFound,
-		fmt.Sprintf(
-			"no configured prefix available for actor %q",
-			participant.actorID,
-		),
-		nil,
-	))
 }

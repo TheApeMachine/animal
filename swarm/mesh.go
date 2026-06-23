@@ -18,6 +18,7 @@ type Mesh struct {
 	err       error
 	group     *qpool.BroadcastGroup
 	gossipTTL time.Duration
+	transport MeshTransport
 }
 
 /*
@@ -35,14 +36,33 @@ func NewMesh(
 		cancel:    cancel,
 		group:     pool.CreateBroadcastGroup(options.MeshID),
 		gossipTTL: options.GossipTTL,
+		transport: options.Transport,
 	}
 
-	return mesh, errnie.Require(map[string]any{
+	err := errnie.Require(map[string]any{
 		"ctx":       mesh.ctx,
 		"cancel":    mesh.cancel,
 		"group":     mesh.group,
 		"gossipTTL": mesh.gossipTTL,
 	})
+
+	if err != nil {
+		cancel()
+
+		return nil, err
+	}
+
+	if mesh.transport == nil {
+		return mesh, nil
+	}
+
+	if err := mesh.transport.Start(mesh.ctx, mesh.receiveEnvelope); err != nil {
+		cancel()
+
+		return nil, err
+	}
+
+	return mesh, nil
 }
 
 /*
@@ -93,19 +113,26 @@ func (mesh *Mesh) PublishValue(
 		return fmt.Errorf("swarm: sender ID is required")
 	}
 
-	artifact, err := qpool.NewBusArtifact(
-		senderID,
+	envelope, err := NewMeshEnvelope(
+		mesh.GroupID(),
 		senderID,
 		messageType,
 		value,
-		mesh.gossipTTL,
 	)
 
 	if err != nil {
 		return err
 	}
 
-	return mesh.group.Send(artifact)
+	if err := mesh.receiveEnvelope(envelope); err != nil {
+		return err
+	}
+
+	if mesh.transport == nil {
+		return nil
+	}
+
+	return mesh.transport.Publish(mesh.ctx, envelope)
 }
 
 /*
@@ -113,4 +140,39 @@ GroupID returns the underlying broadcast group identifier.
 */
 func (mesh *Mesh) GroupID() string {
 	return mesh.group.ID
+}
+
+/*
+Close stops transport resources owned by the mesh.
+*/
+func (mesh *Mesh) Close() error {
+	mesh.cancel()
+
+	if mesh.transport == nil {
+		return nil
+	}
+
+	return mesh.transport.Close()
+}
+
+func (mesh *Mesh) receiveEnvelope(envelope MeshEnvelope) error {
+	if envelope.MeshID != mesh.GroupID() {
+		return errnie.Err(
+			errnie.Validation,
+			fmt.Sprintf(
+				"swarm mesh envelope for %q cannot enter %q",
+				envelope.MeshID,
+				mesh.GroupID(),
+			),
+			nil,
+		)
+	}
+
+	artifact, err := envelope.Artifact(mesh.gossipTTL)
+
+	if err != nil {
+		return err
+	}
+
+	return mesh.group.Send(artifact)
 }

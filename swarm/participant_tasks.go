@@ -64,6 +64,86 @@ func (participant *Participant) StartTask(taskID string, note string) error {
 }
 
 /*
+ClaimTask optimistically claims a submitted task before starting work.
+*/
+func (participant *Participant) ClaimTask(
+	taskID string,
+	confirmationWindow time.Duration,
+) (TaskClaim, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return TaskClaim{}, errnie.Err(errnie.Validation, "swarm task id is required", nil)
+	}
+
+	if _, ok := participant.view.Task(taskID); !ok {
+		return TaskClaim{}, errnie.Err(
+			errnie.NotFound,
+			fmt.Sprintf("swarm task %q is not visible", taskID),
+			nil,
+		)
+	}
+
+	if claim, ok := participant.view.TaskClaim(taskID, participant.actorID); ok {
+		return claim, nil
+	}
+
+	claim, err := NewTaskClaimAt(
+		taskID,
+		participant.actorID,
+		participant.actorName,
+		participant.role,
+		time.Now(),
+		confirmationWindow,
+	)
+
+	if err != nil {
+		return TaskClaim{}, err
+	}
+
+	if err := participant.PublishTaskClaim(claim); err != nil {
+		return TaskClaim{}, err
+	}
+
+	return claim, nil
+}
+
+/*
+ConfirmTaskClaim starts work only when this participant owns the winning claim.
+*/
+func (participant *Participant) ConfirmTaskClaim(taskID string, note string) error {
+	if err := participant.Drain(); err != nil {
+		return err
+	}
+
+	claim, ok := participant.view.TaskClaim(taskID, participant.actorID)
+	if !ok {
+		return errnie.Err(
+			errnie.NotFound,
+			fmt.Sprintf("swarm task %q is not claimed by actor %q", taskID, participant.actorID),
+			nil,
+		)
+	}
+
+	if !claim.Ready(time.Now()) {
+		return errnie.Err(errnie.Validation, "swarm task claim is not confirmable yet", nil)
+	}
+
+	winner, ok := participant.view.TaskClaimWinner(taskID)
+	if !ok {
+		return errnie.Err(errnie.NotFound, "swarm task claim winner is required", nil)
+	}
+
+	if winner.ActorID != participant.actorID {
+		return errnie.Err(
+			errnie.Validation,
+			fmt.Sprintf("swarm task %q claim held by actor %q", taskID, winner.ActorID),
+			nil,
+		)
+	}
+
+	return participant.StartTask(taskID, note)
+}
+
+/*
 CompleteTask marks a task as completed.
 */
 func (participant *Participant) CompleteTask(taskID string, note string) error {
@@ -130,6 +210,21 @@ func (participant *Participant) PublishTask(task a2a.Task) error {
 	}
 
 	return participant.mesh.PublishValue(participant.actorID, MessageTypeTask, task)
+}
+
+/*
+PublishTaskClaim broadcasts an optimistic task claim.
+*/
+func (participant *Participant) PublishTaskClaim(claim TaskClaim) error {
+	if err := claim.Validate(); err != nil {
+		return err
+	}
+
+	if err := participant.view.MergeTaskClaim(claim); err != nil {
+		return err
+	}
+
+	return participant.mesh.PublishValue(participant.actorID, MessageTypeTaskClaim, claim)
 }
 
 /*

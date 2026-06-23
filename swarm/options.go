@@ -10,4 +10,5 @@ type Options struct {
 	GossipTTL time.Duration
 	MeshTTL   time.Duration
 	Buffer    int
+	Transport MeshTransport
 }

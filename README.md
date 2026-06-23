@@ -214,13 +214,13 @@ A living view of where `animal` is and where it could go. `[x]` ships today, `[~
 - [x] qpool gossip mesh with lease-aware participants and conflicting-claim rejection
 - [x] A2A task broadcasts, lifecycle events, and friction/quality/opportunity signals
 - [x] Normalized success metrics over the mesh
-- [~] Workflow orchestrator — the YAML schema (`workflows`, steps, slots, stop conditions), config accessors, and an `ai/workflow.go` stub exist; the execution engine that runs stages, spawns agents per slot, gates on file leases, and honors `stop` conditions is not yet wired (only the bespoke `coding_horizon` orchestrator runs today)
-- [ ] **Heartbeat-renewed leases** — holders re-assert a prefix periodically; on missed heartbeats the lease auto-releases *with a gossip event* so a peer can pick the lane up. Turns an agent crash from "lane frozen for the idle TTL" into a non-event, and gives long tasks a clean handoff across restarts.
-- [ ] **Idempotent task claims** (claim-then-confirm) — peers racing for the same A2A task before gossip converges optimistically claim, then a brief confirmation window lets the loser back off; work starts only after confirmation. Same instinct as the existing lease-conflict rejection, applied to tasks.
-- [ ] **Backoff-on-contention** — a rejected claimant waits with jittered backoff instead of immediately retrying, preventing claim/release thrash on hot prefixes.
-- [ ] Mesh transport beyond in-process qpool (NATS / gRPC) for cross-host swarms
-- [ ] A web/TUI dashboard for live gossip, claims, and task status
-- [ ] Deadlock / starvation detection when peers contend for overlapping prefixes
+- [~] Workflow orchestrator — the YAML schema (`workflows`, steps, slots, stop conditions), config accessors, and `ai.Workflow` now run configured stages, spawn agents per slot, gate mutating slots on file leases, publish A2A task lifecycle, and honor `all_success` stops; provider/tool-backed slot work remains to be wired
+- [x] **Heartbeat-renewed leases** — `swarm.LeaseHeartbeat` re-asserts a held prefix periodically, while `swarm.LeaseSweeper` / `Registry.SweepExpiredLeases` reclaim missed-heartbeat leases and emit release gossip so peers can pick the lane up.
+- [x] **Idempotent task claims** (claim-then-confirm) — peers racing for the same A2A task use `ClaimTask` to publish one optimistic claim per actor, then `ConfirmTaskClaim` waits out the confirmation window, drains gossip, and starts work only for the deterministic winner.
+- [x] **Backoff-on-contention** — rejected configured claims use `ContentionBackoff` with qpool exponential delay plus jitter before retrying, preventing tight claim/release thrash on hot prefixes.
+- [x] Mesh transport beyond in-process qpool — `swarm.MeshTransport` carries typed `MeshEnvelope` frames outside the local qpool group, with `GRPCMeshTransport` bridging separate meshes over gRPC for cross-host swarms.
+- [x] A web dashboard for live gossip, claims, and task status — `swarm.Dashboard` serves HTML, JSON snapshots, and SSE updates over `View.Claims`, `View.Statuses`, tasks, task claims, signals, and metrics.
+- [x] Deadlock / starvation detection when peers contend for overlapping prefixes — overlapping lease claims now emit typed `Contention` events, `View.RecentContentions` exposes them, and `ContentionDetector` reports starvation windows plus two-peer wait-for deadlocks.
 
 ### Reliability & resilience
 

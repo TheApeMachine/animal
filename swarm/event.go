@@ -12,9 +12,11 @@ import (
 const (
 	MessageTypeRumor      = "rumor"
 	MessageTypeTask       = "task"
+	MessageTypeTaskClaim  = "task_claim"
 	MessageTypeTaskStatus = "task_status"
 	MessageTypeSignal     = "signal"
 	MessageTypeMetric     = "metric"
+	MessageTypeContention = "contention"
 )
 
 /*

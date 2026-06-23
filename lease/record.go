@@ -8,5 +8,6 @@ Idle expiration in Coordinator compares lastUsed against Options.IdleTTL to recl
 */
 type leaseRecord struct {
 	actorID  string
+	prefix   string
 	lastUsed time.Time
 }

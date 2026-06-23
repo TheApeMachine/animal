@@ -81,6 +81,29 @@ func TestCoordinatorAcquireID(t *testing.T) {
 }
 
 /*
+TestCoordinatorAcquireIDRejectsOverlappingPrefix verifies prefix leases exclude nested claims.
+*/
+func TestCoordinatorAcquireIDRejectsOverlappingPrefix(t *testing.T) {
+	Convey("Given agent-a holds lanes/a/", t, func() {
+		coordinator, err := newPathCoordinator()
+		So(err, ShouldBeNil)
+		So(coordinator.AcquireID("lanes/a/", "agent-a"), ShouldBeNil)
+
+		Convey("When agent-b claims a nested prefix", func() {
+			err := coordinator.AcquireID("lanes/a/sub/", "agent-b")
+			conflict, ok := AsConflict(err)
+
+			Convey("Then the overlapping acquire should be rejected with the holder", func() {
+				So(err, ShouldNotBeNil)
+				So(ok, ShouldBeTrue)
+				So(conflict.ActorID, ShouldEqual, "agent-a")
+				So(conflict.LeaseKey, ShouldEqual, "lanes/a")
+			})
+		})
+	})
+}
+
+/*
 TestCoordinatorReleaseID verifies prefix release by the holding actor.
 */
 func TestCoordinatorReleaseID(t *testing.T) {

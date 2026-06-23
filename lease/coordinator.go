@@ -87,14 +87,25 @@ func (coordinator *Coordinator) AcquireID(prefix, actorID string) error {
 		updated := cloneCoordinatorSnapshot(snapshot)
 		coordinator.purgeExpiredSnapshot(&updated, coordinator.now())
 
-		record, ok := updated.leases[leaseKey]
+		heldKey, record, ok := coordinator.overlappingLeaseFromSnapshot(
+			updated,
+			leaseKey,
+			actorID,
+		)
+
 		if ok && record.actorID != actorID {
-			acquireErr = fmt.Errorf("lease: key %q held by actor %q", prefix, record.actorID)
+			acquireErr = &ConflictError{
+				Key:      prefix,
+				LeaseKey: heldKey,
+				ActorID:  record.actorID,
+			}
+
 			return snapshot
 		}
 
 		updated.leases[leaseKey] = leaseRecord{
 			actorID:  actorID,
+			prefix:   prefix,
 			lastUsed: coordinator.now(),
 		}
 
@@ -336,6 +347,28 @@ func (coordinator *Coordinator) leaseHolderFromSnapshot(
 	}
 
 	return bestLeaseKey, holder
+}
+
+func (coordinator *Coordinator) overlappingLeaseFromSnapshot(
+	snapshot coordinatorSnapshot,
+	leaseKey string,
+	actorID string,
+) (string, leaseRecord, bool) {
+	for heldKey, record := range snapshot.leases {
+		if record.actorID == actorID {
+			continue
+		}
+
+		if coordinator.keySpace.Covers(heldKey, leaseKey) {
+			return heldKey, record, true
+		}
+
+		if coordinator.keySpace.Covers(leaseKey, heldKey) {
+			return heldKey, record, true
+		}
+	}
+
+	return "", leaseRecord{}, false
 }
 
 func (coordinator *Coordinator) matchesAnyPrefix(normalizedKey string, prefixes []string) bool {

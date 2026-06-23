@@ -8,6 +8,40 @@ import (
 )
 
 /*
+TestAsConflict verifies typed conflict error detection.
+*/
+func TestAsConflict(t *testing.T) {
+	Convey("Given a ConflictError value", t, func() {
+		conflict := &ConflictError{
+			Key:      "lanes/a/sub",
+			LeaseKey: "lanes/a",
+			ActorID:  "builder-a",
+		}
+
+		Convey("When AsConflict is called", func() {
+			parsed, ok := AsConflict(conflict)
+
+			Convey("Then it should expose the holder", func() {
+				So(ok, ShouldBeTrue)
+				So(parsed.Key, ShouldEqual, conflict.Key)
+				So(parsed.LeaseKey, ShouldEqual, conflict.LeaseKey)
+				So(parsed.ActorID, ShouldEqual, conflict.ActorID)
+			})
+		})
+	})
+
+	Convey("Given an unrelated error", t, func() {
+		Convey("When AsConflict is called", func() {
+			_, ok := AsConflict(errors.New("other"))
+
+			Convey("Then it should not match", func() {
+				So(ok, ShouldBeFalse)
+			})
+		})
+	})
+}
+
+/*
 TestAsChanging verifies advisory error detection.
 */
 func TestAsChanging(t *testing.T) {

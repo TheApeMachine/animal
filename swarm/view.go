@@ -21,6 +21,17 @@ type claimRecord struct {
 }
 
 /*
+ClaimRecord is one active lease-prefix claim visible in the local view.
+*/
+type ClaimRecord struct {
+	Prefix    string
+	ActorID   string
+	ActorName string
+	Role      string
+	At        int64
+}
+
+/*
 AnnounceRecord is one merged announcement visible in the local view.
 */
 type AnnounceRecord struct {
@@ -56,23 +67,38 @@ type statusRecord struct {
 	at        int64
 }
 
+/*
+StatusRecord is one actor's latest status rumor visible in the local view.
+*/
+type StatusRecord struct {
+	ActorID   string
+	ActorName string
+	Role      string
+	State     string
+	At        int64
+}
+
 type viewSnapshot struct {
-	claims    map[string]claimRecord
-	announces []announceRecord
-	statuses  map[string]statusRecord
-	tasks     map[string]a2a.Task
-	signals   []Signal
-	metrics   []Metric
+	claims      map[string]claimRecord
+	announces   []announceRecord
+	statuses    map[string]statusRecord
+	tasks       map[string]a2a.Task
+	taskClaims  map[string]map[string]TaskClaim
+	signals     []Signal
+	metrics     []Metric
+	contentions []Contention
 }
 
 func newViewSnapshot() viewSnapshot {
 	return viewSnapshot{
-		claims:    make(map[string]claimRecord),
-		announces: make([]announceRecord, 0),
-		statuses:  make(map[string]statusRecord),
-		tasks:     make(map[string]a2a.Task),
-		signals:   make([]Signal, 0),
-		metrics:   make([]Metric, 0),
+		claims:      make(map[string]claimRecord),
+		announces:   make([]announceRecord, 0),
+		statuses:    make(map[string]statusRecord),
+		tasks:       make(map[string]a2a.Task),
+		taskClaims:  make(map[string]map[string]TaskClaim),
+		signals:     make([]Signal, 0),
+		metrics:     make([]Metric, 0),
+		contentions: make([]Contention, 0),
 	}
 }
 
@@ -89,17 +115,27 @@ func cloneViewSnapshot(snapshot viewSnapshot) viewSnapshot {
 		tasks[taskID] = task.Clone()
 	}
 
+	taskClaims := make(map[string]map[string]TaskClaim, len(snapshot.taskClaims))
+
+	for taskID, claims := range snapshot.taskClaims {
+		taskClaims[taskID] = make(map[string]TaskClaim, len(claims))
+		maps.Copy(taskClaims[taskID], claims)
+	}
+
 	announces := append([]announceRecord(nil), snapshot.announces...)
 	signals := append([]Signal(nil), snapshot.signals...)
 	metrics := append([]Metric(nil), snapshot.metrics...)
+	contentions := append([]Contention(nil), snapshot.contentions...)
 
 	return viewSnapshot{
-		claims:    claims,
-		announces: announces,
-		statuses:  statuses,
-		tasks:     tasks,
-		signals:   signals,
-		metrics:   metrics,
+		claims:      claims,
+		announces:   announces,
+		statuses:    statuses,
+		tasks:       tasks,
+		taskClaims:  taskClaims,
+		signals:     signals,
+		metrics:     metrics,
+		contentions: contentions,
 	}
 }
 
@@ -188,6 +224,20 @@ func (view *View) PurgeExpired(now time.Time) {
 			delete(updated.statuses, actorID)
 		}
 
+		for taskID, claims := range updated.taskClaims {
+			for actorID, claim := range claims {
+				if claim.At >= cutoff {
+					continue
+				}
+
+				delete(claims, actorID)
+			}
+
+			if len(claims) == 0 {
+				delete(updated.taskClaims, taskID)
+			}
+		}
+
 		signals := updated.signals[:0]
 
 		for _, signal := range updated.signals {
@@ -207,6 +257,16 @@ func (view *View) PurgeExpired(now time.Time) {
 		}
 
 		updated.metrics = metrics
+
+		contentions := updated.contentions[:0]
+
+		for _, contention := range updated.contentions {
+			if contention.At >= cutoff {
+				contentions = append(contentions, contention)
+			}
+		}
+
+		updated.contentions = contentions
 
 		return updated
 	})

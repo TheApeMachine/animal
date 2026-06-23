@@ -28,6 +28,36 @@ func (view *View) MergeTask(task a2a.Task) error {
 }
 
 /*
+MergeTaskClaim records an optimistic claim for a task.
+*/
+func (view *View) MergeTaskClaim(claim TaskClaim) error {
+	if err := claim.Validate(); err != nil {
+		return err
+	}
+
+	view.state.Update(func(snapshot viewSnapshot) viewSnapshot {
+		updated := cloneViewSnapshot(snapshot)
+		claims := updated.taskClaims[claim.TaskID]
+
+		if claims == nil {
+			claims = make(map[string]TaskClaim)
+			updated.taskClaims[claim.TaskID] = claims
+		}
+
+		existing, ok := claims[claim.ActorID]
+		if ok && existing.At <= claim.At {
+			return updated
+		}
+
+		claims[claim.ActorID] = claim
+
+		return updated
+	})
+
+	return nil
+}
+
+/*
 MergeTaskStatus applies an A2A streaming status event into the local view.
 */
 func (view *View) MergeTaskStatus(event a2a.TaskStatusUpdateEvent) error {
@@ -145,6 +175,50 @@ func (view *View) SubmittedTasks() []a2a.Task {
 }
 
 /*
+TaskClaim returns one actor's current claim for a task.
+*/
+func (view *View) TaskClaim(taskID, actorID string) (TaskClaim, bool) {
+	claims := view.state.Load().taskClaims[taskID]
+
+	if claims == nil {
+		return TaskClaim{}, false
+	}
+
+	claim, ok := claims[actorID]
+
+	return claim, ok
+}
+
+/*
+TaskClaims returns task claims in deterministic confirmation order.
+*/
+func (view *View) TaskClaims(taskID string) []TaskClaim {
+	claims := view.state.Load().taskClaims[taskID]
+	out := make([]TaskClaim, 0, len(claims))
+
+	for _, claim := range claims {
+		out = append(out, claim)
+	}
+
+	slices.SortFunc(out, compareTaskClaims)
+
+	return out
+}
+
+/*
+TaskClaimWinner returns the currently winning task claim.
+*/
+func (view *View) TaskClaimWinner(taskID string) (TaskClaim, bool) {
+	claims := view.TaskClaims(taskID)
+
+	if len(claims) == 0 {
+		return TaskClaim{}, false
+	}
+
+	return claims[0], true
+}
+
+/*
 RecentSignals returns a snapshot of non-expired swarm signals.
 */
 func (view *View) RecentSignals() []Signal {
@@ -180,4 +254,12 @@ RecentMetrics returns a snapshot of non-expired swarm metrics.
 */
 func (view *View) RecentMetrics() []Metric {
 	return append([]Metric(nil), view.state.Load().metrics...)
+}
+
+func compareTaskClaims(firstClaim, secondClaim TaskClaim) int {
+	if diff := cmp.Compare(firstClaim.At, secondClaim.At); diff != 0 {
+		return diff
+	}
+
+	return cmp.Compare(firstClaim.ActorID, secondClaim.ActorID)
 }
